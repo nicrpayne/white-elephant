@@ -1,45 +1,32 @@
 import React, { useState } from "react";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardFooter,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
-import { Switch } from "@/components/ui/switch";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Badge } from "@/components/ui/badge";
-import { ScrollArea } from "@/components/ui/scroll-area";
-import { Separator } from "@/components/ui/separator";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogTrigger,
-} from "@/components/ui/alert-dialog";
-import {
+import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "./ui/card";
+import { Button } from "./ui/button";
+import { Input } from "./ui/input";
+import { Label } from "./ui/label";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "./ui/tabs";
+import { Badge } from "./ui/badge";
+import { Separator } from "./ui/separator";
+import { Switch } from "./ui/switch";
+import { ScrollArea } from "./ui/scroll-area";
+import { Avatar, AvatarImage, AvatarFallback } from "./ui/avatar";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "./ui/dialog";
+import { 
+  Users, 
+  Gift, 
+  Play, 
+  Pause, 
+  Square, 
+  UserPlus, 
+  Share2, 
   Copy,
-  Download,
-  Gift,
-  Plus,
   QrCode,
-  Settings,
-  Share2,
-  Trash2,
   Upload,
-  Users,
+  Trash2,
+  Settings,
+  Plus,
+  Download
 } from "lucide-react";
+import QRCode from 'qrcode';
 
 interface Gift {
   id: string;
@@ -68,66 +55,15 @@ interface GameConfig {
 
 const AdminDashboard = () => {
   const [activeTab, setActiveTab] = useState("setup");
-  const [sessionCode, setSessionCode] = useState("ABCD1234");
-  const [gameStatus, setGameStatus] = useState<
-    "draft" | "lobby" | "active" | "paused" | "ended"
-  >("draft");
-
-  // Mock data for gifts
-  const [gifts, setGifts] = useState<Gift[]>([
-    {
-      id: "1",
-      name: "Mystery Box",
-      imageUrl:
-        "https://images.unsplash.com/photo-1513201099705-a9746e1e201f?w=400&q=80",
-      status: "hidden",
-      stealCount: 0,
-    },
-    {
-      id: "2",
-      name: "Tech Gadget",
-      imageUrl:
-        "https://images.unsplash.com/photo-1550029402-226115b7c579?w=400&q=80",
-      status: "hidden",
-      stealCount: 0,
-    },
-    {
-      id: "3",
-      name: "Cozy Blanket",
-      imageUrl:
-        "https://images.unsplash.com/photo-1580301762395-21ce84d00bc6?w=400&q=80",
-      status: "hidden",
-      stealCount: 0,
-    },
-  ]);
-
-  // Mock data for players
-  const [players, setPlayers] = useState<Player[]>([
-    {
-      id: "1",
-      displayName: "Alice",
-      joinTime: "2023-12-01T12:00:00Z",
-      isAdmin: true,
-      orderIndex: 1,
-      eliminated: false,
-    },
-    {
-      id: "2",
-      displayName: "Bob",
-      joinTime: "2023-12-01T12:05:00Z",
-      isAdmin: false,
-      orderIndex: 2,
-      eliminated: false,
-    },
-    {
-      id: "3",
-      displayName: "Charlie",
-      joinTime: "2023-12-01T12:10:00Z",
-      isAdmin: false,
-      orderIndex: 3,
-      eliminated: false,
-    },
-  ]);
+  const [gameStatus, setGameStatus] = useState<"setup" | "active" | "paused" | "ended">("setup");
+  const [sessionCode] = useState("ABCD1234");
+  const [gifts, setGifts] = useState<Gift[]>([]);
+  const [players, setPlayers] = useState<Player[]>([]);
+  const [newGiftName, setNewGiftName] = useState("");
+  const [newGiftImage, setNewGiftImage] = useState("");
+  const [newPlayerName, setNewPlayerName] = useState("");
+  const [qrCodeUrl, setQrCodeUrl] = useState<string>("");
+  const [showQrCode, setShowQrCode] = useState(false);
 
   // Game configuration
   const [gameConfig, setGameConfig] = useState<GameConfig>({
@@ -136,25 +72,19 @@ const AdminDashboard = () => {
     randomizeOrder: true,
   });
 
-  // Form states
-  const [newGift, setNewGift] = useState({
-    name: "",
-    imageUrl: "",
-    link: "",
-  });
-
   const handleAddGift = () => {
-    if (newGift.name && newGift.imageUrl) {
+    if (newGiftName && newGiftImage) {
       const gift: Gift = {
         id: `${gifts.length + 1}`,
-        name: newGift.name,
-        imageUrl: newGift.imageUrl,
-        link: newGift.link || undefined,
+        name: newGiftName,
+        imageUrl: newGiftImage,
+        link: undefined,
         status: "hidden",
         stealCount: 0,
       };
       setGifts([...gifts, gift]);
-      setNewGift({ name: "", imageUrl: "", link: "" });
+      setNewGiftName("");
+      setNewGiftImage("");
     }
   };
 
@@ -168,6 +98,9 @@ const AdminDashboard = () => {
 
   const handleStartGame = () => {
     setGameStatus("active");
+    // Open GameBoard in a new window
+    const gameUrl = `${window.location.origin}/game/${sessionCode}`;
+    window.open(gameUrl, '_blank', 'width=1200,height=800,scrollbars=yes,resizable=yes');
   };
 
   const handlePauseGame = () => {
@@ -192,6 +125,57 @@ const AdminDashboard = () => {
     // You could add a toast notification here
   };
 
+  const handleShareInvite = () => {
+    const inviteUrl = `${window.location.origin}/join?code=${sessionCode}`;
+    const inviteText = `Join my White Elephant gift exchange! Use code: ${sessionCode} or visit: ${inviteUrl}`;
+    
+    if (navigator.share) {
+      navigator.share({
+        title: 'White Elephant Game Invite',
+        text: inviteText,
+        url: inviteUrl,
+      }).catch(console.error);
+    } else {
+      // Fallback: copy to clipboard
+      navigator.clipboard.writeText(inviteText).then(() => {
+        // You could add a toast notification here
+        alert('Invite link copied to clipboard!');
+      }).catch(() => {
+        // Fallback: show the invite text in an alert
+        alert(`Share this invite:\n\n${inviteText}`);
+      });
+    }
+  };
+
+  const handleCopyLink = async () => {
+    const inviteUrl = `${window.location.origin}/join?code=${sessionCode}`;
+    try {
+      await navigator.clipboard.writeText(inviteUrl);
+      alert('Invite link copied to clipboard!');
+    } catch (err) {
+      alert(`Copy this link:\n\n${inviteUrl}`);
+    }
+  };
+
+  const handleGenerateQrCode = async () => {
+    const inviteUrl = `${window.location.origin}/join?code=${sessionCode}`;
+    try {
+      const qrCodeDataUrl = await QRCode.toDataURL(inviteUrl, {
+        width: 256,
+        margin: 2,
+        color: {
+          dark: '#000000',
+          light: '#FFFFFF'
+        }
+      });
+      setQrCodeUrl(qrCodeDataUrl);
+      setShowQrCode(true);
+    } catch (err) {
+      console.error('Error generating QR code:', err);
+      alert('Failed to generate QR code');
+    }
+  };
+
   return (
     <div className="container mx-auto p-4 bg-background">
       <div className="flex justify-between items-center mb-6">
@@ -214,15 +198,13 @@ const AdminDashboard = () => {
           </div>
           <Badge
             variant={
-              gameStatus === "draft"
+              gameStatus === "setup"
                 ? "outline"
-                : gameStatus === "lobby"
-                  ? "secondary"
-                  : gameStatus === "active"
-                    ? "default"
-                    : gameStatus === "paused"
-                      ? "outline"
-                      : "destructive"
+                : gameStatus === "active"
+                  ? "default"
+                  : gameStatus === "paused"
+                    ? "outline"
+                    : "destructive"
             }
           >
             {gameStatus.charAt(0).toUpperCase() + gameStatus.slice(1)}
@@ -310,8 +292,8 @@ const AdminDashboard = () => {
               </div>
             </CardContent>
             <CardFooter>
-              <Button onClick={() => setGameStatus("lobby")}>
-                Save Configuration & Create Lobby
+              <Button onClick={() => setGameStatus("active")}>
+                Save Configuration & Start Game
               </Button>
             </CardFooter>
           </Card>
@@ -332,32 +314,21 @@ const AdminDashboard = () => {
                   <Label htmlFor="giftName">Gift Name</Label>
                   <Input
                     id="giftName"
-                    value={newGift.name}
+                    value={newGiftName}
                     onChange={(e) =>
-                      setNewGift({ ...newGift, name: e.target.value })
+                      setNewGiftName(e.target.value)
                     }
                     placeholder="Mystery Box"
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="giftLink">Gift Link (Optional)</Label>
-                  <Input
-                    id="giftLink"
-                    value={newGift.link}
-                    onChange={(e) =>
-                      setNewGift({ ...newGift, link: e.target.value })
-                    }
-                    placeholder="https://example.com/product"
-                  />
-                </div>
-                <div className="space-y-2 md:col-span-2">
                   <Label htmlFor="giftImage">Gift Image URL</Label>
                   <div className="flex gap-2">
                     <Input
                       id="giftImage"
-                      value={newGift.imageUrl}
+                      value={newGiftImage}
                       onChange={(e) =>
-                        setNewGift({ ...newGift, imageUrl: e.target.value })
+                        setNewGiftImage(e.target.value)
                       }
                       placeholder="https://example.com/image.jpg"
                       className="flex-1"
@@ -415,19 +386,9 @@ const AdminDashboard = () => {
                         <div className="flex justify-between items-start">
                           <div>
                             <h3 className="font-medium">{gift.name}</h3>
-                            {gift.link && (
-                              <a
-                                href={gift.link}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="text-xs text-blue-500 hover:underline truncate block max-w-[200px]"
-                              >
-                                {gift.link}
-                              </a>
-                            )}
                           </div>
-                          <AlertDialog>
-                            <AlertDialogTrigger asChild>
+                          <Dialog>
+                            <DialogTrigger asChild>
                               <Button
                                 variant="ghost"
                                 size="sm"
@@ -435,25 +396,23 @@ const AdminDashboard = () => {
                               >
                                 <Trash2 className="h-4 w-4" />
                               </Button>
-                            </AlertDialogTrigger>
-                            <AlertDialogContent>
-                              <AlertDialogHeader>
-                                <AlertDialogTitle>Remove Gift</AlertDialogTitle>
-                                <AlertDialogDescription>
+                            </DialogTrigger>
+                            <DialogContent>
+                              <DialogHeader>
+                                <DialogTitle>Remove Gift</DialogTitle>
+                                <DialogDescription>
                                   Are you sure you want to remove this gift?
                                   This action cannot be undone.
-                                </AlertDialogDescription>
-                              </AlertDialogHeader>
-                              <AlertDialogFooter>
-                                <AlertDialogCancel>Cancel</AlertDialogCancel>
-                                <AlertDialogAction
-                                  onClick={() => handleRemoveGift(gift.id)}
-                                >
-                                  Remove
-                                </AlertDialogAction>
-                              </AlertDialogFooter>
-                            </AlertDialogContent>
-                          </AlertDialog>
+                                </DialogDescription>
+                              </DialogHeader>
+                              <Button
+                                onClick={() => handleRemoveGift(gift.id)}
+                                className="w-full"
+                              >
+                                Remove
+                              </Button>
+                            </DialogContent>
+                          </Dialog>
                         </div>
                       </CardContent>
                     </Card>
@@ -480,7 +439,7 @@ const AdminDashboard = () => {
                   Reorder Players
                 </Button>
                 <div className="flex gap-2">
-                  <Button variant="outline">
+                  <Button variant="outline" onClick={handleShareInvite}>
                     <Share2 className="h-4 w-4 mr-2" />
                     Share Invite
                   </Button>
@@ -519,8 +478,8 @@ const AdminDashboard = () => {
                       <div className="flex items-center gap-2">
                         <Badge variant="secondary">#{player.orderIndex}</Badge>
                         {!player.isAdmin && (
-                          <AlertDialog>
-                            <AlertDialogTrigger asChild>
+                          <Dialog>
+                            <DialogTrigger asChild>
                               <Button
                                 variant="ghost"
                                 size="sm"
@@ -528,27 +487,25 @@ const AdminDashboard = () => {
                               >
                                 <Trash2 className="h-4 w-4" />
                               </Button>
-                            </AlertDialogTrigger>
-                            <AlertDialogContent>
-                              <AlertDialogHeader>
-                                <AlertDialogTitle>
+                            </DialogTrigger>
+                            <DialogContent>
+                              <DialogHeader>
+                                <DialogTitle>
                                   Remove Player
-                                </AlertDialogTitle>
-                                <AlertDialogDescription>
+                                </DialogTitle>
+                                <DialogDescription>
                                   Are you sure you want to remove this player
                                   from the game?
-                                </AlertDialogDescription>
-                              </AlertDialogHeader>
-                              <AlertDialogFooter>
-                                <AlertDialogCancel>Cancel</AlertDialogCancel>
-                                <AlertDialogAction
-                                  onClick={() => handleRemovePlayer(player.id)}
-                                >
-                                  Remove
-                                </AlertDialogAction>
-                              </AlertDialogFooter>
-                            </AlertDialogContent>
-                          </AlertDialog>
+                                </DialogDescription>
+                              </DialogHeader>
+                              <Button
+                                onClick={() => handleRemovePlayer(player.id)}
+                                className="w-full"
+                              >
+                                Remove
+                              </Button>
+                            </DialogContent>
+                          </Dialog>
                         )}
                       </div>
                     </div>
@@ -580,15 +537,13 @@ const AdminDashboard = () => {
                         <span className="text-muted-foreground">Status:</span>
                         <Badge
                           variant={
-                            gameStatus === "draft"
+                            gameStatus === "setup"
                               ? "outline"
-                              : gameStatus === "lobby"
-                                ? "secondary"
-                                : gameStatus === "active"
-                                  ? "default"
-                                  : gameStatus === "paused"
-                                    ? "outline"
-                                    : "destructive"
+                              : gameStatus === "active"
+                                ? "default"
+                                : gameStatus === "paused"
+                                  ? "outline"
+                                  : "destructive"
                           }
                         >
                           {gameStatus.charAt(0).toUpperCase() +
@@ -659,7 +614,7 @@ const AdminDashboard = () => {
 
               <div className="mt-6 space-y-4">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {gameStatus === "draft" || gameStatus === "lobby" ? (
+                  {gameStatus === "setup" ? (
                     <Button
                       onClick={handleStartGame}
                       className="w-full"
@@ -682,29 +637,29 @@ const AdminDashboard = () => {
                     </Button>
                   ) : null}
 
-                  {gameStatus !== "draft" && (
-                    <AlertDialog>
-                      <AlertDialogTrigger asChild>
+                  {gameStatus !== "setup" && (
+                    <Dialog>
+                      <DialogTrigger asChild>
                         <Button variant="destructive" className="w-full">
                           End Game
                         </Button>
-                      </AlertDialogTrigger>
-                      <AlertDialogContent>
-                        <AlertDialogHeader>
-                          <AlertDialogTitle>End Game</AlertDialogTitle>
-                          <AlertDialogDescription>
+                      </DialogTrigger>
+                      <DialogContent>
+                        <DialogHeader>
+                          <DialogTitle>End Game</DialogTitle>
+                          <DialogDescription>
                             Are you sure you want to end the game? This will
                             finalize all gift assignments and cannot be undone.
-                          </AlertDialogDescription>
-                        </AlertDialogHeader>
-                        <AlertDialogFooter>
-                          <AlertDialogCancel>Cancel</AlertDialogCancel>
-                          <AlertDialogAction onClick={handleEndGame}>
-                            End Game
-                          </AlertDialogAction>
-                        </AlertDialogFooter>
-                      </AlertDialogContent>
-                    </AlertDialog>
+                          </DialogDescription>
+                        </DialogHeader>
+                        <Button
+                          onClick={handleEndGame}
+                          className="w-full"
+                        >
+                          End Game
+                        </Button>
+                      </DialogContent>
+                    </Dialog>
                   )}
                 </div>
 
@@ -731,36 +686,62 @@ const AdminDashboard = () => {
             </CardHeader>
             <CardContent>
               <div className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <Label htmlFor="showGiftLinks">
-                      Show Gift Links in Game
-                    </Label>
-                    <p className="text-xs text-muted-foreground">
-                      Display product links during gameplay
-                    </p>
+                <div className="text-center p-6 border-2 border-dashed border-gray-300 rounded-lg">
+                  <div className="text-3xl font-bold text-primary mb-2">{sessionCode}</div>
+                  <p className="text-sm text-muted-foreground mb-4">Share this code with players</p>
+                  <div className="flex flex-col sm:flex-row gap-2 justify-center">
+                    <Button variant="outline" onClick={handleCopyLink}>
+                      <Copy className="h-4 w-4 mr-2" />
+                      Copy Link
+                    </Button>
+                    <Button variant="outline" onClick={handleGenerateQrCode}>
+                      <QrCode className="h-4 w-4 mr-2" />
+                      Show QR Code
+                    </Button>
+                    <Button variant="outline" onClick={handleShareInvite}>
+                      <Share2 className="h-4 w-4 mr-2" />
+                      Share Invite
+                    </Button>
                   </div>
-                  <Switch id="showGiftLinks" />
                 </div>
-                <div className="flex items-center justify-between">
-                  <div>
-                    <Label htmlFor="collectShipping">
-                      Collect Shipping Info
-                    </Label>
-                    <p className="text-xs text-muted-foreground">
-                      Ask players for shipping details at game end
-                    </p>
+
+                <Dialog open={showQrCode} onOpenChange={setShowQrCode}>
+                  <DialogContent className="sm:max-w-md">
+                    <DialogHeader>
+                      <DialogTitle>QR Code Invite</DialogTitle>
+                      <DialogDescription>
+                        Players can scan this QR code to join the game
+                      </DialogDescription>
+                    </DialogHeader>
+                    <div className="flex flex-col items-center space-y-4">
+                      {qrCodeUrl && (
+                        <img 
+                          src={qrCodeUrl} 
+                          alt="QR Code for game invite" 
+                          className="border rounded-lg"
+                        />
+                      )}
+                      <div className="text-center">
+                        <p className="text-sm text-muted-foreground mb-2">Game Code:</p>
+                        <p className="text-2xl font-bold">{sessionCode}</p>
+                      </div>
+                      <Button onClick={handleCopyLink} className="w-full">
+                        <Copy className="h-4 w-4 mr-2" />
+                        Copy Invite Link
+                      </Button>
+                    </div>
+                  </DialogContent>
+                </Dialog>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="text-center">
+                    <div className="text-2xl font-bold">{players.length}</div>
+                    <div className="text-sm text-muted-foreground">Players Joined</div>
                   </div>
-                  <Switch id="collectShipping" />
-                </div>
-                <div className="flex items-center justify-between">
-                  <div>
-                    <Label htmlFor="observerMode">Enable Observer Mode</Label>
-                    <p className="text-xs text-muted-foreground">
-                      Allow view-only participants
-                    </p>
+                  <div className="text-center">
+                    <div className="text-2xl font-bold">{gifts.length}</div>
+                    <div className="text-sm text-muted-foreground">Gifts Added</div>
                   </div>
-                  <Switch id="observerMode" />
                 </div>
               </div>
             </CardContent>

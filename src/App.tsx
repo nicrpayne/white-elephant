@@ -2,6 +2,8 @@ import { Suspense } from "react";
 import { useRoutes, Routes, Route } from "react-router-dom";
 import Home from "./components/home";
 import AdminDashboard from "./components/AdminDashboard";
+import GameBoard from "./components/GameBoard";
+import JoinGame from "./components/JoinGame";
 import routes from "tempo-routes";
 
 function App() {
@@ -12,7 +14,8 @@ function App() {
           <Route path="/" element={<Home />} />
           <Route path="/create" element={<AdminDashboard />} />
           <Route path="/admin/create" element={<AdminDashboard />} />
-          <Route path="/join" element={<div className="min-h-screen bg-background flex items-center justify-center"><div className="text-center"><h1 className="text-2xl font-bold mb-4">Join Game</h1><p className="text-muted-foreground">Join game functionality coming soon!</p></div></div>} />
+          <Route path="/game/:sessionCode" element={<GameBoard />} />
+          <Route path="/join" element={<JoinGame />} />
         </Routes>
         {import.meta.env.VITE_TEMPO === "true" && useRoutes(routes)}
       </>

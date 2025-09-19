@@ -34,6 +34,7 @@ interface GameBoardProps {
   activePlayerId?: string;
   roundIndex?: number;
   gameStatus?: "draft" | "lobby" | "active" | "paused" | "ended";
+  isAdmin?: boolean;
   onPauseGame?: () => void;
   onResumeGame?: () => void;
   onEndGame?: () => void;
@@ -48,6 +49,7 @@ const GameBoard = ({
   activePlayerId = "player-1",
   roundIndex = 1,
   gameStatus = "active",
+  isAdmin = false,
   onPauseGame = () => console.log("Game paused"),
   onResumeGame = () => console.log("Game resumed"),
   onEndGame = () => console.log("Game ended"),
@@ -60,60 +62,66 @@ const GameBoard = ({
   return (
     <div className="bg-background min-h-screen p-4 md:p-6">
       <div className="max-w-7xl mx-auto">
-        <div className="flex justify-between items-center mb-6">
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
           <div>
-            <h1 className="text-3xl font-bold">White Elephant</h1>
-            <div className="flex items-center gap-2 mt-1">
-              <Badge variant="outline">Session: {sessionCode}</Badge>
+            <h1 className="text-2xl sm:text-3xl font-bold">White Elephant</h1>
+            <div className="flex flex-wrap items-center gap-2 mt-1">
+              <Badge variant="outline" className="text-xs">Session: {sessionCode}</Badge>
               <Badge
                 variant={gameStatus === "active" ? "default" : "secondary"}
+                className="text-xs"
               >
                 {gameStatus.charAt(0).toUpperCase() + gameStatus.slice(1)}
               </Badge>
-              <Badge variant="outline">Round {roundIndex}</Badge>
+              <Badge variant="outline" className="text-xs">Round {roundIndex}</Badge>
             </div>
           </div>
 
-          <div className="flex gap-2">
-            {gameStatus === "active" ? (
-              <Button variant="outline" onClick={onPauseGame}>
-                <Pause className="h-4 w-4 mr-2" /> Pause Game
-              </Button>
-            ) : gameStatus === "paused" ? (
-              <Button variant="outline" onClick={onResumeGame}>
-                <Play className="h-4 w-4 mr-2" /> Resume Game
-              </Button>
-            ) : null}
+          {isAdmin && (
+            <div className="flex flex-wrap gap-2">
+              {gameStatus === "active" ? (
+                <Button variant="outline" size="sm" onClick={onPauseGame}>
+                  <Pause className="h-4 w-4 mr-1" /> 
+                  <span className="hidden sm:inline">Pause Game</span>
+                  <span className="sm:hidden">Pause</span>
+                </Button>
+              ) : gameStatus === "paused" ? (
+                <Button variant="outline" size="sm" onClick={onResumeGame}>
+                  <Play className="h-4 w-4 mr-1" /> 
+                  <span className="hidden sm:inline">Resume Game</span>
+                  <span className="sm:hidden">Resume</span>
+                </Button>
+              ) : null}
 
-            <Button variant="outline" onClick={onSkipTurn}>
-              <SkipForward className="h-4 w-4 mr-2" /> Skip Turn
-            </Button>
+              <Button variant="outline" size="sm" onClick={onSkipTurn}>
+                <SkipForward className="h-4 w-4 mr-1" /> 
+                <span className="hidden sm:inline">Skip Turn</span>
+                <span className="sm:hidden">Skip</span>
+              </Button>
 
-            <Button variant="destructive" onClick={onEndGame}>
-              End Game
-            </Button>
-          </div>
+              <Button variant="destructive" size="sm" onClick={onEndGame}>
+                <span className="hidden sm:inline">End Game</span>
+                <span className="sm:hidden">End</span>
+              </Button>
+            </div>
+          )}
         </div>
 
         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-          <TabsList className="mb-4">
-            <TabsTrigger value="board">Game Board</TabsTrigger>
-            <TabsTrigger value="players">Players</TabsTrigger>
-            <TabsTrigger value="history">History</TabsTrigger>
+          <TabsList className="grid w-full grid-cols-3 mb-4">
+            <TabsTrigger value="board" className="text-xs sm:text-sm px-2">Game Board</TabsTrigger>
+            <TabsTrigger value="players" className="text-xs sm:text-sm px-2">Players</TabsTrigger>
+            <TabsTrigger value="history" className="text-xs sm:text-sm px-2">History</TabsTrigger>
           </TabsList>
 
           <TabsContent value="board" className="w-full">
-            <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+            <div className="grid grid-cols-1 lg:grid-cols-4 gap-4">
               <div className="lg:col-span-3">
-                <Card>
-                  <CardContent className="p-4">
-                    <GiftGrid
-                      gifts={gifts}
-                      activePlayerId={activePlayerId}
-                      gameStatus={gameStatus}
-                    />
-                  </CardContent>
-                </Card>
+                <GiftGrid
+                  gifts={gifts}
+                  activePlayerId={activePlayerId}
+                  gameStatus={gameStatus}
+                />
               </div>
 
               <div className="lg:col-span-1">
@@ -127,14 +135,16 @@ const GameBoard = ({
             </div>
 
             {activePlayer && gameStatus === "active" && (
-              <div className="mt-6 p-4 bg-muted rounded-lg flex items-center">
-                <AlertCircle className="h-5 w-5 mr-2 text-primary" />
-                <span className="font-medium">
-                  {activePlayer.displayName}'s turn:
-                </span>
-                <span className="ml-2">
-                  Pick a new gift or steal an available gift
-                </span>
+              <div className="mt-4 p-3 bg-muted rounded-lg flex items-center">
+                <AlertCircle className="h-4 w-4 mr-2 text-primary flex-shrink-0" />
+                <div className="text-sm">
+                  <span className="font-medium">
+                    {activePlayer.displayName}'s turn:
+                  </span>
+                  <span className="ml-1">
+                    Pick a new gift or steal an available gift
+                  </span>
+                </div>
               </div>
             )}
           </TabsContent>
