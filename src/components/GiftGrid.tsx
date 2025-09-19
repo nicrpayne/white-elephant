@@ -1,6 +1,7 @@
 import React from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { motion } from "framer-motion";
 import { Lock, Gift, User } from "lucide-react";
 
@@ -63,6 +64,26 @@ interface GiftCardProps {
 
 const GiftCard = ({ gift, onClick, isSelectable }: GiftCardProps) => {
   const isClickable = isSelectable && gift.status !== "locked";
+  
+  // Generate initials from owner name
+  const getInitials = (name: string) => {
+    return name
+      .split(' ')
+      .map(word => word.charAt(0))
+      .join('')
+      .toUpperCase()
+      .slice(0, 2);
+  };
+
+  // Generate a consistent color based on the owner name
+  const getAvatarColor = (name: string) => {
+    const colors = [
+      'bg-red-500', 'bg-blue-500', 'bg-green-500', 'bg-yellow-500', 
+      'bg-purple-500', 'bg-pink-500', 'bg-indigo-500', 'bg-teal-500'
+    ];
+    const hash = name.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
+    return colors[hash % colors.length];
+  };
 
   return (
     <motion.div
@@ -95,6 +116,18 @@ const GiftCard = ({ gift, onClick, isSelectable }: GiftCardProps) => {
                   <Gift size={32} className="text-muted-foreground" />
                 </div>
               )}
+              
+              {/* Owner Avatar in top-right corner */}
+              {gift.status !== "hidden" && gift.ownerName && (
+                <div className="absolute top-2 right-2">
+                  <Avatar className={`h-6 w-6 border-2 border-white shadow-sm ${getAvatarColor(gift.ownerName)}`}>
+                    <AvatarFallback className="text-white text-xs font-medium bg-transparent">
+                      {getInitials(gift.ownerName)}
+                    </AvatarFallback>
+                  </Avatar>
+                </div>
+              )}
+              
               {gift.status === "locked" && (
                 <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
                   <Lock size={24} className="text-white" />
@@ -109,19 +142,21 @@ const GiftCard = ({ gift, onClick, isSelectable }: GiftCardProps) => {
                 {gift.status === "hidden" ? "Mys..." : gift.name}
               </h3>
               
-              {gift.status !== "hidden" && gift.stealCount > 0 && (
-                <Badge variant="secondary" className="text-xs px-1 py-0 h-auto self-start">
-                  {gift.stealCount}/2 steals
-                </Badge>
-              )}
-            </div>
-
-            {gift.status !== "hidden" && gift.ownerName && (
-              <div className="flex items-center text-xs text-muted-foreground mt-1">
-                <User size={10} className="mr-1 flex-shrink-0" />
-                <span className="truncate">{gift.ownerName}</span>
+              <div className="flex items-center justify-between">
+                {gift.status !== "hidden" && gift.stealCount > 0 && (
+                  <Badge variant="secondary" className="text-xs px-1 py-0 h-auto">
+                    {gift.stealCount}/2 steals
+                  </Badge>
+                )}
+                
+                {/* Owner name - now smaller since we have the avatar */}
+                {gift.status !== "hidden" && gift.ownerName && (
+                  <div className="flex items-center text-xs text-muted-foreground">
+                    <span className="truncate">{gift.ownerName}</span>
+                  </div>
+                )}
               </div>
-            )}
+            </div>
           </div>
         </CardContent>
       </Card>

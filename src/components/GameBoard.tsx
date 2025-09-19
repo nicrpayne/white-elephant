@@ -10,10 +10,10 @@ import PlayerTurnPanel from "./PlayerTurnPanel";
 interface Gift {
   id: string;
   name: string;
-  imageUrl: string;
-  link?: string;
-  status: "hidden" | "revealed" | "locked" | "final";
+  imageUrl?: string;
+  status: "hidden" | "revealed" | "locked";
   ownerPlayerId?: string;
+  ownerName?: string;
   stealCount: number;
 }
 
@@ -225,71 +225,69 @@ const GameBoard = ({
 const sampleGifts: Gift[] = [
   {
     id: "gift-1",
-    name: "Mystery Box",
-    imageUrl:
-      "https://images.unsplash.com/photo-1549465220-1a8b9238cd48?w=500&q=80",
+    name: "Bluetooth Speaker",
+    imageUrl: "https://images.unsplash.com/photo-1608043152269-423dbba4e7e1?w=400&q=80",
     status: "revealed",
-    ownerPlayerId: "player-2",
+    ownerPlayerId: "player-1",
+    ownerName: "Alice Johnson",
     stealCount: 1,
   },
   {
     id: "gift-2",
-    name: "Gift Card",
-    imageUrl:
-      "https://images.unsplash.com/photo-1549465220-1a8b9238cd48?w=500&q=80",
+    name: "Coffee Mug Set",
+    imageUrl: "https://images.unsplash.com/photo-1514228742587-6b1558fcf93a?w=400&q=80",
     status: "revealed",
-    ownerPlayerId: "player-1",
+    ownerPlayerId: "player-2",
+    ownerName: "Bob Smith",
     stealCount: 0,
   },
   {
     id: "gift-3",
-    name: "Chocolate Box",
-    imageUrl:
-      "https://images.unsplash.com/photo-1549465220-1a8b9238cd48?w=500&q=80",
-    status: "revealed",
+    name: "Scented Candles",
+    imageUrl: "https://images.unsplash.com/photo-1602874801006-e26d405c9c8f?w=400&q=80",
+    status: "locked",
     ownerPlayerId: "player-3",
-    stealCount: 0,
+    ownerName: "Charlie Brown",
+    stealCount: 2,
   },
   {
     id: "gift-4",
-    name: "Tech Gadget",
-    imageUrl:
-      "https://images.unsplash.com/photo-1549465220-1a8b9238cd48?w=500&q=80",
+    name: "Mystery Gift",
     status: "hidden",
     stealCount: 0,
   },
   {
     id: "gift-5",
-    name: "Coffee Mug",
-    imageUrl:
-      "https://images.unsplash.com/photo-1549465220-1a8b9238cd48?w=500&q=80",
-    status: "hidden",
-    stealCount: 0,
+    name: "Plant Pot",
+    imageUrl: "https://images.unsplash.com/photo-1416879595882-3373a0480b5b?w=400&q=80",
+    status: "revealed",
+    ownerPlayerId: "player-4",
+    ownerName: "Diana Prince",
+    stealCount: 1,
   },
   {
     id: "gift-6",
-    name: "Board Game",
-    imageUrl:
-      "https://images.unsplash.com/photo-1549465220-1a8b9238cd48?w=500&q=80",
-    status: "locked",
-    ownerPlayerId: "player-4",
-    stealCount: 2,
+    name: "Book Collection",
+    imageUrl: "https://images.unsplash.com/photo-1481627834876-b7833e8f5570?w=400&q=80",
+    status: "revealed",
+    ownerPlayerId: "player-1",
+    ownerName: "Alice Johnson",
+    stealCount: 0,
   },
   {
     id: "gift-7",
-    name: "Scented Candle",
-    imageUrl:
-      "https://images.unsplash.com/photo-1549465220-1a8b9238cd48?w=500&q=80",
+    name: "Mystery Gift",
     status: "hidden",
     stealCount: 0,
   },
   {
     id: "gift-8",
-    name: "Wireless Earbuds",
-    imageUrl:
-      "https://images.unsplash.com/photo-1549465220-1a8b9238cd48?w=500&q=80",
-    status: "hidden",
-    stealCount: 0,
+    name: "Wireless Headphones",
+    imageUrl: "https://images.unsplash.com/photo-1505740420928-5e560c06d30e?w=400&q=80",
+    status: "revealed",
+    ownerPlayerId: "player-2",
+    ownerName: "Bob Smith",
+    stealCount: 1,
   },
 ];
 
