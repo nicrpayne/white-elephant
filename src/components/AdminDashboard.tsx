@@ -24,7 +24,11 @@ import {
   Trash2,
   Settings,
   Plus,
-  Download
+  Download,
+  ExternalLink,
+  Loader2,
+  Edit,
+  Image as ImageIcon
 } from "lucide-react";
 import QRCode from 'qrcode';
 
@@ -36,6 +40,7 @@ interface Gift {
   status: "hidden" | "revealed" | "locked" | "final";
   ownerPlayerId?: string;
   stealCount: number;
+  description?: string;
 }
 
 interface Player {
@@ -59,8 +64,17 @@ const AdminDashboard = () => {
   const [sessionCode] = useState("ABCD1234");
   const [gifts, setGifts] = useState<Gift[]>([]);
   const [players, setPlayers] = useState<Player[]>([]);
-  const [newGiftName, setNewGiftName] = useState("");
-  const [newGiftImage, setNewGiftImage] = useState("");
+  const [newGiftUrl, setNewGiftUrl] = useState("");
+  const [isLoadingPreview, setIsLoadingPreview] = useState(false);
+  const [previewData, setPreviewData] = useState<{
+    title: string;
+    description: string;
+    image: string;
+    url: string;
+  } | null>(null);
+  const [editingImageUrl, setEditingImageUrl] = useState("");
+  const [showImageEdit, setShowImageEdit] = useState(false);
+  const [editingGiftId, setEditingGiftId] = useState<string | null>(null);
   const [newPlayerName, setNewPlayerName] = useState("");
   const [qrCodeUrl, setQrCodeUrl] = useState<string>("");
   const [showQrCode, setShowQrCode] = useState(false);
@@ -72,19 +86,214 @@ const AdminDashboard = () => {
     randomizeOrder: true,
   });
 
+  const handleFetchPreview = async () => {
+    if (!newGiftUrl) return;
+    
+    setIsLoadingPreview(true);
+    try {
+      // Try multiple approaches to get link preview data
+      console.log('Fetching preview for:', newGiftUrl);
+      
+      // Approach 1: Try using a CORS proxy with Open Graph scraper
+      const corsProxy = 'https://api.allorigins.win/raw?url=';
+      const response = await fetch(corsProxy + encodeURIComponent(newGiftUrl));
+      const html = await response.text();
+      
+      console.log('Received HTML response');
+      
+      // Parse Open Graph tags from HTML
+      const parser = new DOMParser();
+      const doc = parser.parseFromString(html, 'text/html');
+      
+      // Extract Open Graph meta tags
+      const getMetaContent = (property: string) => {
+        const meta = doc.querySelector(`meta[property="${property}"]`) || 
+                     doc.querySelector(`meta[name="${property}"]`);
+        return meta?.getAttribute('content') || '';
+      };
+      
+      const title = getMetaContent('og:title') || 
+                   doc.querySelector('title')?.textContent || 
+                   'Product';
+      
+      const description = getMetaContent('og:description') || 
+                         getMetaContent('description') || 
+                         '';
+      
+      let image = getMetaContent('og:image') || 
+                   getMetaContent('twitter:image') || 
+                   doc.querySelector('img')?.src ||
+                   'https://images.unsplash.com/photo-1513885535751-8b9238bd345a?w=400&q=80';
+      
+      // Fix relative URLs - make them absolute
+      if (image.startsWith('/')) {
+        const url = new URL(newGiftUrl);
+        image = `${url.protocol}//${url.host}${image}`;
+      } else if (!image.startsWith('http')) {
+        const url = new URL(newGiftUrl);
+        image = `${url.protocol}//${url.host}/${image}`;
+      }
+      
+      console.log('Extracted data:', { title, description, image });
+      
+      setPreviewData({
+        title: title.trim(),
+        description: description.trim(),
+        image: image,
+        url: newGiftUrl,
+      });
+    } catch (error) {
+      console.error("Error fetching preview:", error);
+      
+      // Fallback: Ask user to manually provide image
+      setPreviewData({
+        title: "Gift Item",
+        description: "Could not fetch preview. Please add image URL manually.",
+        image: "https://images.unsplash.com/photo-1513885535751-8b9238bd345a?w=400&q=80",
+        url: newGiftUrl,
+      });
+    } finally {
+      setIsLoadingPreview(false);
+    }
+  };
+
   const handleAddGift = () => {
-    if (newGiftName && newGiftImage) {
+    if (previewData) {
       const gift: Gift = {
-        id: `${gifts.length + 1}`,
-        name: newGiftName,
-        imageUrl: newGiftImage,
-        link: undefined,
+        id: `${Date.now()}`,
+        name: previewData.title,
+        imageUrl: previewData.image,
+        link: previewData.url,
+        description: previewData.description,
         status: "hidden",
         stealCount: 0,
       };
       setGifts([...gifts, gift]);
-      setNewGiftName("");
-      setNewGiftImage("");
+      setNewGiftUrl("");
+      setPreviewData(null);
+    }
+  };
+
+  const handleQuickAddGift = async () => {
+    if (newGiftUrl) {
+      // Automatically fetch metadata before adding
+      setIsLoadingPreview(true);
+      
+      try {
+        console.log('Quick adding gift, fetching preview for:', newGiftUrl);
+        
+        const corsProxy = 'https://api.allorigins.win/raw?url=';
+        const response = await fetch(corsProxy + encodeURIComponent(newGiftUrl));
+        const html = await response.text();
+        
+        const parser = new DOMParser();
+        const doc = parser.parseFromString(html, 'text/html');
+        
+        const getMetaContent = (property: string) => {
+          const meta = doc.querySelector(`meta[property="${property}"]`) || 
+                       doc.querySelector(`meta[name="${property}"]`);
+          return meta?.getAttribute('content') || '';
+        };
+        
+        const title = getMetaContent('og:title') || 
+                     doc.querySelector('title')?.textContent || 
+                     'Gift Item';
+        
+        let image = getMetaContent('og:image') || 
+                   getMetaContent('twitter:image') || 
+                   'https://images.unsplash.com/photo-1513885535751-8b9238bd345a?w=400&q=80';
+        
+        // Fix relative URLs - make them absolute
+        if (image.startsWith('/')) {
+          const url = new URL(newGiftUrl);
+          image = `${url.protocol}//${url.host}${image}`;
+        } else if (!image.startsWith('http')) {
+          const url = new URL(newGiftUrl);
+          image = `${url.protocol}//${url.host}/${image}`;
+        }
+        
+        console.log('Quick add extracted data:', { title, image });
+        
+        const gift: Gift = {
+          id: `${Date.now()}`,
+          name: title.trim() || 'Gift Item',
+          imageUrl: image,
+          link: newGiftUrl,
+          description: newGiftUrl,
+          status: "hidden",
+          stealCount: 0,
+        };
+        
+        setGifts([...gifts, gift]);
+        setNewGiftUrl("");
+        setPreviewData(null);
+      } catch (error) {
+        console.error('Error in quick add:', error);
+        
+        // Fallback: add with placeholder
+        const gift: Gift = {
+          id: `${Date.now()}`,
+          name: "Gift Item",
+          imageUrl: "https://images.unsplash.com/photo-1513885535751-8b9238bd345a?w=400&q=80",
+          link: newGiftUrl,
+          description: newGiftUrl,
+          status: "hidden",
+          stealCount: 0,
+        };
+        setGifts([...gifts, gift]);
+        setNewGiftUrl("");
+        setPreviewData(null);
+      } finally {
+        setIsLoadingPreview(false);
+      }
+    }
+  };
+
+  const handleUpdatePreviewImage = () => {
+    if (previewData && editingImageUrl) {
+      setPreviewData({
+        ...previewData,
+        image: editingImageUrl,
+      });
+      setEditingImageUrl("");
+      setShowImageEdit(false);
+    }
+  };
+
+  const handleUpdateGiftImage = () => {
+    if (editingGiftId && editingImageUrl) {
+      setGifts(gifts.map(gift => 
+        gift.id === editingGiftId 
+          ? { ...gift, imageUrl: editingImageUrl }
+          : gift
+      ));
+      setEditingImageUrl("");
+      setEditingGiftId(null);
+      setShowImageEdit(false);
+    }
+  };
+
+  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>, isPreview: boolean) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        const base64String = reader.result as string;
+        if (isPreview && previewData) {
+          setPreviewData({
+            ...previewData,
+            image: base64String,
+          });
+        } else if (editingGiftId) {
+          setGifts(gifts.map(gift => 
+            gift.id === editingGiftId 
+              ? { ...gift, imageUrl: base64String }
+              : gift
+          ));
+          setEditingGiftId(null);
+        }
+      };
+      reader.readAsDataURL(file);
     }
   };
 
@@ -304,48 +513,156 @@ const AdminDashboard = () => {
             <CardHeader>
               <CardTitle>Add New Gift</CardTitle>
               <CardDescription>
-                Enter gift details to add to the game
+                Paste a product link from Amazon, Etsy, or any website
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div className="space-y-4">
                 <div className="space-y-2">
-                  <Label htmlFor="giftName">Gift Name</Label>
-                  <Input
-                    id="giftName"
-                    value={newGiftName}
-                    onChange={(e) =>
-                      setNewGiftName(e.target.value)
-                    }
-                    placeholder="Mystery Box"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="giftImage">Gift Image URL</Label>
+                  <Label htmlFor="giftUrl">Product Link</Label>
                   <div className="flex gap-2">
                     <Input
-                      id="giftImage"
-                      value={newGiftImage}
-                      onChange={(e) =>
-                        setNewGiftImage(e.target.value)
-                      }
-                      placeholder="https://example.com/image.jpg"
+                      id="giftUrl"
+                      value={newGiftUrl}
+                      onChange={(e) => setNewGiftUrl(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' && e.shiftKey) {
+                          handleQuickAddGift();
+                        } else if (e.key === 'Enter') {
+                          handleFetchPreview();
+                        }
+                      }}
+                      placeholder="https://amazon.com/product/..."
                       className="flex-1"
                     />
-                    <Button variant="outline">
-                      <Upload className="h-4 w-4 mr-2" />
-                      Upload
+                    <Button 
+                      onClick={handleFetchPreview}
+                      disabled={!newGiftUrl || isLoadingPreview}
+                      variant="outline"
+                    >
+                      {isLoadingPreview ? (
+                        <>
+                          <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                          Loading...
+                        </>
+                      ) : (
+                        "Preview"
+                      )}
+                    </Button>
+                    <Button 
+                      onClick={handleQuickAddGift}
+                      disabled={!newGiftUrl}
+                    >
+                      <Plus className="h-4 w-4 mr-2" />
+                      Add
                     </Button>
                   </div>
+                  <p className="text-xs text-muted-foreground">
+                    Press Enter to preview, or Shift+Enter to add directly
+                  </p>
                 </div>
+
+                {previewData && (
+                  <Card className="overflow-hidden border-2 border-primary">
+                    <div className="flex flex-col sm:flex-row">
+                      <div className="sm:w-1/3 min-h-[200px] bg-muted relative group flex items-center justify-center p-4">
+                        <img
+                          src={previewData.image}
+                          alt={previewData.title}
+                          className="max-w-full max-h-[300px] object-contain"
+                          onError={(e) => {
+                            console.error('Image failed to load:', previewData.image);
+                            e.currentTarget.src = 'https://images.unsplash.com/photo-1513885535751-8b9238bd345a?w=400&q=80';
+                          }}
+                        />
+                        <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
+                          <Dialog open={showImageEdit && !editingGiftId} onOpenChange={setShowImageEdit}>
+                            <DialogTrigger asChild>
+                              <Button
+                                size="sm"
+                                variant="secondary"
+                              >
+                                <Edit className="h-4 w-4 mr-2" />
+                                Edit Image
+                              </Button>
+                            </DialogTrigger>
+                            <DialogContent>
+                              <DialogHeader>
+                                <DialogTitle>Update Gift Image</DialogTitle>
+                                <DialogDescription>
+                                  Upload an image or paste an image URL
+                                </DialogDescription>
+                              </DialogHeader>
+                              <div className="space-y-4">
+                                <div className="space-y-2">
+                                  <Label htmlFor="imageUrl">Image URL</Label>
+                                  <Input
+                                    id="imageUrl"
+                                    value={editingImageUrl}
+                                    onChange={(e) => setEditingImageUrl(e.target.value)}
+                                    placeholder="https://example.com/image.jpg"
+                                  />
+                                  <Button 
+                                    onClick={handleUpdatePreviewImage}
+                                    disabled={!editingImageUrl}
+                                    className="w-full"
+                                  >
+                                    Update Image
+                                  </Button>
+                                </div>
+                                <Separator />
+                                <div className="space-y-2">
+                                  <Label htmlFor="imageUpload">Upload Image</Label>
+                                  <Input
+                                    id="imageUpload"
+                                    type="file"
+                                    accept="image/*"
+                                    onChange={(e) => {
+                                      handleImageUpload(e, true);
+                                      setShowImageEdit(false);
+                                    }}
+                                  />
+                                </div>
+                              </div>
+                            </DialogContent>
+                          </Dialog>
+                        </div>
+                      </div>
+                      <div className="flex-1 p-4">
+                        <h3 className="font-semibold text-lg mb-2">
+                          {previewData.title}
+                        </h3>
+                        {previewData.description && (
+                          <p className="text-sm text-muted-foreground line-clamp-2 mb-3">
+                            {previewData.description}
+                          </p>
+                        )}
+                        <a
+                          href={previewData.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-sm text-primary hover:underline flex items-center gap-1"
+                        >
+                          View Product
+                          <ExternalLink className="h-3 w-3" />
+                        </a>
+                      </div>
+                    </div>
+                  </Card>
+                )}
               </div>
             </CardContent>
-            <CardFooter>
-              <Button onClick={handleAddGift}>
-                <Plus className="h-4 w-4 mr-2" />
-                Add Gift
-              </Button>
-            </CardFooter>
+            {previewData && (
+              <CardFooter>
+                <Button 
+                  onClick={handleAddGift}
+                  className="w-full"
+                >
+                  <Plus className="h-4 w-4 mr-2" />
+                  Add Gift to Game
+                </Button>
+              </CardFooter>
+            )}
           </Card>
 
           <Card>
@@ -360,11 +677,15 @@ const AdminDashboard = () => {
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                   {gifts.map((gift) => (
                     <Card key={gift.id} className="overflow-hidden">
-                      <div className="aspect-square relative">
+                      <div className="aspect-video relative bg-muted group flex items-center justify-center p-2">
                         <img
                           src={gift.imageUrl}
                           alt={gift.name}
-                          className="object-cover w-full h-full"
+                          className="max-w-full max-h-full object-contain"
+                          onError={(e) => {
+                            console.error('Gift image failed to load:', gift.imageUrl);
+                            e.currentTarget.src = 'https://images.unsplash.com/photo-1513885535751-8b9238bd345a?w=400&q=80';
+                          }}
                         />
                         <Badge
                           className="absolute top-2 right-2"
@@ -380,38 +701,108 @@ const AdminDashboard = () => {
                         >
                           {gift.status}
                         </Badge>
-                      </div>
-                      <CardContent className="p-4">
-                        <div className="flex justify-between items-start">
-                          <div>
-                            <h3 className="font-medium">{gift.name}</h3>
-                          </div>
-                          <Dialog>
+                        <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                          <Dialog 
+                            open={showImageEdit && editingGiftId === gift.id} 
+                            onOpenChange={(open) => {
+                              setShowImageEdit(open);
+                              if (!open) setEditingGiftId(null);
+                            }}
+                          >
                             <DialogTrigger asChild>
                               <Button
-                                variant="ghost"
                                 size="sm"
-                                className="text-destructive"
+                                variant="secondary"
+                                onClick={() => setEditingGiftId(gift.id)}
                               >
-                                <Trash2 className="h-4 w-4" />
+                                <Edit className="h-4 w-4 mr-2" />
+                                Edit Image
                               </Button>
                             </DialogTrigger>
                             <DialogContent>
                               <DialogHeader>
-                                <DialogTitle>Remove Gift</DialogTitle>
+                                <DialogTitle>Update Gift Image</DialogTitle>
                                 <DialogDescription>
-                                  Are you sure you want to remove this gift?
-                                  This action cannot be undone.
+                                  Upload an image or paste an image URL
                                 </DialogDescription>
                               </DialogHeader>
-                              <Button
-                                onClick={() => handleRemoveGift(gift.id)}
-                                className="w-full"
-                              >
-                                Remove
-                              </Button>
+                              <div className="space-y-4">
+                                <div className="space-y-2">
+                                  <Label htmlFor={`imageUrl-${gift.id}`}>Image URL</Label>
+                                  <Input
+                                    id={`imageUrl-${gift.id}`}
+                                    value={editingImageUrl}
+                                    onChange={(e) => setEditingImageUrl(e.target.value)}
+                                    placeholder="https://example.com/image.jpg"
+                                  />
+                                  <Button 
+                                    onClick={handleUpdateGiftImage}
+                                    disabled={!editingImageUrl}
+                                    className="w-full"
+                                  >
+                                    Update Image
+                                  </Button>
+                                </div>
+                                <Separator />
+                                <div className="space-y-2">
+                                  <Label htmlFor={`imageUpload-${gift.id}`}>Upload Image</Label>
+                                  <Input
+                                    id={`imageUpload-${gift.id}`}
+                                    type="file"
+                                    accept="image/*"
+                                    onChange={(e) => {
+                                      handleImageUpload(e, false);
+                                      setShowImageEdit(false);
+                                    }}
+                                  />
+                                </div>
+                              </div>
                             </DialogContent>
                           </Dialog>
+                        </div>
+                      </div>
+                      <CardContent className="p-4">
+                        <div className="space-y-2">
+                          <div className="flex justify-between items-start">
+                            <h3 className="font-medium line-clamp-1">{gift.name}</h3>
+                            <Dialog>
+                              <DialogTrigger asChild>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="text-destructive"
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                </Button>
+                              </DialogTrigger>
+                              <DialogContent>
+                                <DialogHeader>
+                                  <DialogTitle>Remove Gift</DialogTitle>
+                                  <DialogDescription>
+                                    Are you sure you want to remove this gift?
+                                    This action cannot be undone.
+                                  </DialogDescription>
+                                </DialogHeader>
+                                <Button
+                                  onClick={() => handleRemoveGift(gift.id)}
+                                  className="w-full"
+                                >
+                                  Remove
+                                </Button>
+                              </DialogContent>
+                            </Dialog>
+                          </div>
+                          {gift.link && (
+                            <a
+                              href={gift.link}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-xs text-primary hover:underline flex items-center gap-1"
+                            >
+                              View Product
+                              <ExternalLink className="h-3 w-3" />
+                            </a>
+                          )}
                         </div>
                       </CardContent>
                     </Card>
