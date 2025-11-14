@@ -10,6 +10,7 @@ import { Switch } from "./ui/switch";
 import { ScrollArea } from "./ui/scroll-area";
 import { Avatar, AvatarImage, AvatarFallback } from "./ui/avatar";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "./ui/dialog";
+import { Checkbox } from "./ui/checkbox";
 import { 
   Users, 
   Gift, 
@@ -28,9 +29,13 @@ import {
   ExternalLink,
   Loader2,
   Edit,
-  Image as ImageIcon
+  Image as ImageIcon,
+  Grid3x3,
+  List,
+  GripVertical
 } from "lucide-react";
 import QRCode from 'qrcode';
+import { useGame } from "@/contexts/GameContext";
 
 interface Gift {
   id: string;
@@ -59,11 +64,9 @@ interface GameConfig {
 }
 
 const AdminDashboard = () => {
+  const { gameState, setGifts, setPlayers, setGameStatus, setGameConfig, addGift, removeGift, addPlayer, removePlayer, updateGift, setActivePlayerId } = useGame();
+  
   const [activeTab, setActiveTab] = useState("setup");
-  const [gameStatus, setGameStatus] = useState<"setup" | "active" | "paused" | "ended">("setup");
-  const [sessionCode] = useState("ABCD1234");
-  const [gifts, setGifts] = useState<Gift[]>([]);
-  const [players, setPlayers] = useState<Player[]>([]);
   const [newGiftUrl, setNewGiftUrl] = useState("");
   const [isLoadingPreview, setIsLoadingPreview] = useState(false);
   const [previewData, setPreviewData] = useState<{
@@ -78,13 +81,168 @@ const AdminDashboard = () => {
   const [newPlayerName, setNewPlayerName] = useState("");
   const [qrCodeUrl, setQrCodeUrl] = useState<string>("");
   const [showQrCode, setShowQrCode] = useState(false);
+  const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
+  const [selectedGiftIds, setSelectedGiftIds] = useState<Set<string>>(new Set());
+  const [draggedGiftId, setDraggedGiftId] = useState<string | null>(null);
 
-  // Game configuration
-  const [gameConfig, setGameConfig] = useState<GameConfig>({
-    maxStealsPerGift: 2,
-    allowImmediateStealback: false,
-    randomizeOrder: true,
-  });
+  // Get values from context
+  const { gifts, players, gameStatus, sessionCode, gameConfig } = gameState;
+
+  // Auto-fetch preview when URL is pasted
+  const handleUrlChange = async (url: string) => {
+    setNewGiftUrl(url);
+    
+    // Check if it's a valid URL
+    if (url && (url.startsWith('http://') || url.startsWith('https://'))) {
+      setIsLoadingPreview(true);
+      
+      try {
+        console.log('Auto-fetching preview for:', url);
+        
+        // For Amazon, try to extract ASIN and use a more reliable approach
+        let title = 'Product';
+        let description = '';
+        let image = 'https://images.unsplash.com/photo-1513885535751-8b9238bd345a?w=400&q=80';
+        
+        if (url.includes('amazon.com')) {
+          // Extract ASIN from Amazon URL
+          const asinMatch = url.match(/\/dp\/([A-Z0-9]{10})/i) || url.match(/\/gp\/product\/([A-Z0-9]{10})/i);
+          
+          if (asinMatch) {
+            const asin = asinMatch[1];
+            console.log('Found Amazon ASIN:', asin);
+            
+            // Try to fetch the page directly (some proxies work better for Amazon)
+            try {
+              const response = await fetch(`https://corsproxy.io/?${encodeURIComponent(url)}`, {
+                signal: AbortSignal.timeout(8000)
+              });
+              const html = await response.text();
+              
+              // Extract title from various possible locations
+              const titleMatch = html.match(/<span id="productTitle"[^>]*>([^<]+)<\/span>/i) ||
+                                html.match(/<title>([^<]+)<\/title>/i);
+              
+              if (titleMatch) {
+                title = titleMatch[1].trim().replace(/\s+/g, ' ').replace(' : Amazon.com', '').replace(' - Amazon.com', '');
+              }
+              
+              // Extract image - Amazon uses specific patterns
+              const imageMatch = html.match(/"hiRes":"([^"]+)"/i) ||
+                                html.match(/"large":"([^"]+)"/i) ||
+                                html.match(/data-old-hires="([^"]+)"/i) ||
+                                html.match(/data-a-dynamic-image="[^"]*([^"]+\.jpg)/i);
+              
+              if (imageMatch) {
+                image = imageMatch[1].replace(/\\u0026/g, '&').replace(/\\/g, '');
+              }
+              
+              // Try to get description
+              const descMatch = html.match(/<meta name="description" content="([^"]+)"/i);
+              if (descMatch) {
+                description = descMatch[1].trim();
+              }
+              
+              console.log('Extracted Amazon data:', { title, image, description });
+            } catch (e) {
+              console.log('Direct fetch failed, using ASIN fallback');
+              title = `Amazon Product (${asin})`;
+            }
+          }
+        } else {
+          // For non-Amazon sites, use the existing approach
+          const corsProxies = [
+            'https://corsproxy.io/?',
+            'https://api.allorigins.win/raw?url=',
+          ];
+          
+          let html = '';
+          let fetchSuccess = false;
+          
+          for (const proxy of corsProxies) {
+            try {
+              const response = await fetch(proxy + encodeURIComponent(url), {
+                signal: AbortSignal.timeout(8000)
+              });
+              html = await response.text();
+              fetchSuccess = true;
+              break;
+            } catch (proxyError) {
+              console.log(`Proxy ${proxy} failed, trying next...`);
+              continue;
+            }
+          }
+          
+          if (fetchSuccess) {
+            const parser = new DOMParser();
+            const doc = parser.parseFromString(html, 'text/html');
+            
+            const getMetaContent = (property: string) => {
+              const meta = doc.querySelector(`meta[property="${property}"]`) || 
+                           doc.querySelector(`meta[name="${property}"]`);
+              return meta?.getAttribute('content') || '';
+            };
+            
+            title = getMetaContent('og:title') || 
+                   getMetaContent('twitter:title') ||
+                   doc.querySelector('title')?.textContent || 
+                   'Product';
+            
+            description = getMetaContent('og:description') || 
+                         getMetaContent('description') || 
+                         getMetaContent('twitter:description') ||
+                         '';
+            
+            let imgSrc = getMetaContent('og:image') || 
+                        getMetaContent('twitter:image') || 
+                        doc.querySelector('img')?.src ||
+                        'https://images.unsplash.com/photo-1513885535751-8b9238bd345a?w=400&q=80';
+            
+            // Fix relative URLs
+            if (imgSrc.startsWith('/')) {
+              const urlObj = new URL(url);
+              image = `${urlObj.protocol}//${urlObj.host}${imgSrc}`;
+            } else if (!imgSrc.startsWith('http')) {
+              const urlObj = new URL(url);
+              image = `${urlObj.protocol}//${urlObj.host}/${imgSrc}`;
+            } else {
+              image = imgSrc;
+            }
+          }
+        }
+        
+        setPreviewData({
+          title: title.trim(),
+          description: description.trim(),
+          image: image,
+          url: url,
+        });
+      } catch (error) {
+        console.error('Error auto-fetching preview:', error);
+        
+        // Extract domain name for better fallback
+        let siteName = 'Gift Item';
+        try {
+          const urlObj = new URL(url);
+          siteName = urlObj.hostname.replace('www.', '').split('.')[0];
+          siteName = siteName.charAt(0).toUpperCase() + siteName.slice(1) + ' Product';
+        } catch (e) {
+          // ignore
+        }
+        
+        setPreviewData({
+          title: siteName,
+          description: "Preview unavailable. You can still add this gift - the link will work for players.",
+          image: "https://images.unsplash.com/photo-1513885535751-8b9238bd345a?w=400&q=80",
+          url: url,
+        });
+      } finally {
+        setIsLoadingPreview(false);
+      }
+    } else {
+      setPreviewData(null);
+    }
+  };
 
   const handleFetchPreview = async () => {
     if (!newGiftUrl) return;
@@ -168,7 +326,7 @@ const AdminDashboard = () => {
         status: "hidden",
         stealCount: 0,
       };
-      setGifts([...gifts, gift]);
+      addGift(gift);
       setNewGiftUrl("");
       setPreviewData(null);
     }
@@ -224,7 +382,7 @@ const AdminDashboard = () => {
           stealCount: 0,
         };
         
-        setGifts([...gifts, gift]);
+        addGift(gift);
         setNewGiftUrl("");
         setPreviewData(null);
       } catch (error) {
@@ -240,7 +398,7 @@ const AdminDashboard = () => {
           status: "hidden",
           stealCount: 0,
         };
-        setGifts([...gifts, gift]);
+        addGift(gift);
         setNewGiftUrl("");
         setPreviewData(null);
       } finally {
@@ -262,11 +420,7 @@ const AdminDashboard = () => {
 
   const handleUpdateGiftImage = () => {
     if (editingGiftId && editingImageUrl) {
-      setGifts(gifts.map(gift => 
-        gift.id === editingGiftId 
-          ? { ...gift, imageUrl: editingImageUrl }
-          : gift
-      ));
+      updateGift(editingGiftId, { imageUrl: editingImageUrl });
       setEditingImageUrl("");
       setEditingGiftId(null);
       setShowImageEdit(false);
@@ -285,11 +439,7 @@ const AdminDashboard = () => {
             image: base64String,
           });
         } else if (editingGiftId) {
-          setGifts(gifts.map(gift => 
-            gift.id === editingGiftId 
-              ? { ...gift, imageUrl: base64String }
-              : gift
-          ));
+          updateGift(editingGiftId, { imageUrl: base64String });
           setEditingGiftId(null);
         }
       };
@@ -298,15 +448,71 @@ const AdminDashboard = () => {
   };
 
   const handleRemoveGift = (id: string) => {
-    setGifts(gifts.filter((gift) => gift.id !== id));
+    removeGift(id);
+  };
+
+  const handleBulkDeleteGifts = () => {
+    selectedGiftIds.forEach(id => removeGift(id));
+    setSelectedGiftIds(new Set());
+  };
+
+  const toggleGiftSelection = (id: string) => {
+    const newSelected = new Set(selectedGiftIds);
+    if (newSelected.has(id)) {
+      newSelected.delete(id);
+    } else {
+      newSelected.add(id);
+    }
+    setSelectedGiftIds(newSelected);
+  };
+
+  const toggleSelectAll = () => {
+    if (selectedGiftIds.size === gifts.length) {
+      setSelectedGiftIds(new Set());
+    } else {
+      setSelectedGiftIds(new Set(gifts.map(g => g.id)));
+    }
+  };
+
+  const handleDragStart = (e: React.DragEvent, giftId: string) => {
+    setDraggedGiftId(giftId);
+    e.dataTransfer.effectAllowed = "move";
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+  };
+
+  const handleDrop = (e: React.DragEvent, targetGiftId: string) => {
+    e.preventDefault();
+    if (!draggedGiftId || draggedGiftId === targetGiftId) return;
+
+    const draggedIndex = gifts.findIndex(g => g.id === draggedGiftId);
+    const targetIndex = gifts.findIndex(g => g.id === targetGiftId);
+
+    const newGifts = [...gifts];
+    const [removed] = newGifts.splice(draggedIndex, 1);
+    newGifts.splice(targetIndex, 0, removed);
+
+    setGifts(newGifts);
+    setDraggedGiftId(null);
+  };
+
+  const handleDragEnd = () => {
+    setDraggedGiftId(null);
   };
 
   const handleRemovePlayer = (id: string) => {
-    setPlayers(players.filter((player) => player.id !== id));
+    removePlayer(id);
   };
 
   const handleStartGame = () => {
     setGameStatus("active");
+    // Set first player as active
+    if (players.length > 0) {
+      setActivePlayerId(players[0].id);
+    }
     // Open GameBoard in a new window
     const gameUrl = `${window.location.origin}/game/${sessionCode}`;
     window.open(gameUrl, '_blank', 'width=1200,height=800,scrollbars=yes,resizable=yes');
@@ -524,41 +730,23 @@ const AdminDashboard = () => {
                     <Input
                       id="giftUrl"
                       value={newGiftUrl}
-                      onChange={(e) => setNewGiftUrl(e.target.value)}
+                      onChange={(e) => handleUrlChange(e.target.value)}
                       onKeyDown={(e) => {
-                        if (e.key === 'Enter' && e.shiftKey) {
-                          handleQuickAddGift();
-                        } else if (e.key === 'Enter') {
-                          handleFetchPreview();
+                        if (e.key === 'Enter' && previewData) {
+                          handleAddGift();
                         }
                       }}
                       placeholder="https://amazon.com/product/..."
                       className="flex-1"
                     />
-                    <Button 
-                      onClick={handleFetchPreview}
-                      disabled={!newGiftUrl || isLoadingPreview}
-                      variant="outline"
-                    >
-                      {isLoadingPreview ? (
-                        <>
-                          <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                          Loading...
-                        </>
-                      ) : (
-                        "Preview"
-                      )}
-                    </Button>
-                    <Button 
-                      onClick={handleQuickAddGift}
-                      disabled={!newGiftUrl}
-                    >
-                      <Plus className="h-4 w-4 mr-2" />
-                      Add
-                    </Button>
+                    {isLoadingPreview && (
+                      <div className="flex items-center px-3">
+                        <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                      </div>
+                    )}
                   </div>
                   <p className="text-xs text-muted-foreground">
-                    Press Enter to preview, or Shift+Enter to add directly
+                    Paste a product link and the preview will load automatically
                   </p>
                 </div>
 
@@ -667,28 +855,258 @@ const AdminDashboard = () => {
 
           <Card>
             <CardHeader>
-              <CardTitle>Gift List</CardTitle>
-              <CardDescription>
-                Manage gifts for this session ({gifts.length} gifts)
-              </CardDescription>
+              <div className="flex items-center justify-between">
+                <div>
+                  <CardTitle>Gift List</CardTitle>
+                  <CardDescription>
+                    Manage gifts for this session ({gifts.length} gifts)
+                  </CardDescription>
+                </div>
+                <div className="flex items-center gap-2">
+                  {selectedGiftIds.size > 0 && (
+                    <Dialog>
+                      <DialogTrigger asChild>
+                        <Button variant="destructive" size="sm">
+                          <Trash2 className="h-4 w-4 mr-2" />
+                          Delete ({selectedGiftIds.size})
+                        </Button>
+                      </DialogTrigger>
+                      <DialogContent>
+                        <DialogHeader>
+                          <DialogTitle>Delete Selected Gifts</DialogTitle>
+                          <DialogDescription>
+                            Are you sure you want to delete {selectedGiftIds.size} selected gift(s)?
+                            This action cannot be undone.
+                          </DialogDescription>
+                        </DialogHeader>
+                        <Button
+                          onClick={handleBulkDeleteGifts}
+                          variant="destructive"
+                          className="w-full"
+                        >
+                          Delete {selectedGiftIds.size} Gift(s)
+                        </Button>
+                      </DialogContent>
+                    </Dialog>
+                  )}
+                  <div className="flex items-center gap-1 border rounded-md">
+                    <Button
+                      variant={viewMode === "grid" ? "secondary" : "ghost"}
+                      size="sm"
+                      onClick={() => setViewMode("grid")}
+                      className="rounded-r-none"
+                    >
+                      <Grid3x3 className="h-4 w-4" />
+                    </Button>
+                    <Button
+                      variant={viewMode === "list" ? "secondary" : "ghost"}
+                      size="sm"
+                      onClick={() => setViewMode("list")}
+                      className="rounded-l-none"
+                    >
+                      <List className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </div>
+              </div>
             </CardHeader>
             <CardContent>
               <ScrollArea className="h-[400px] pr-4">
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                  {gifts.map((gift) => (
-                    <Card key={gift.id} className="overflow-hidden">
-                      <div className="aspect-video relative bg-muted group flex items-center justify-center p-2">
-                        <img
-                          src={gift.imageUrl}
-                          alt={gift.name}
-                          className="max-w-full max-h-full object-contain"
-                          onError={(e) => {
-                            console.error('Gift image failed to load:', gift.imageUrl);
-                            e.currentTarget.src = 'https://images.unsplash.com/photo-1513885535751-8b9238bd345a?w=400&q=80';
-                          }}
+                {viewMode === "grid" ? (
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {gifts.map((gift) => (
+                      <Card key={gift.id} className="overflow-hidden">
+                        <div className="aspect-video relative bg-muted group flex items-center justify-center p-2">
+                          <img
+                            src={gift.imageUrl}
+                            alt={gift.name}
+                            className="max-w-full max-h-full object-contain"
+                            onError={(e) => {
+                              console.error('Gift image failed to load:', gift.imageUrl);
+                              e.currentTarget.src = 'https://images.unsplash.com/photo-1513885535751-8b9238bd345a?w=400&q=80';
+                            }}
+                          />
+                          <Badge
+                            className="absolute top-2 right-2"
+                            variant={
+                              gift.status === "hidden"
+                                ? "outline"
+                                : gift.status === "revealed"
+                                  ? "secondary"
+                                  : gift.status === "locked"
+                                    ? "default"
+                                    : "destructive"
+                            }
+                          >
+                            {gift.status}
+                          </Badge>
+                          <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                            <Dialog 
+                              open={showImageEdit && editingGiftId === gift.id} 
+                              onOpenChange={(open) => {
+                                setShowImageEdit(open);
+                                if (!open) setEditingGiftId(null);
+                              }}
+                            >
+                              <DialogTrigger asChild>
+                                <Button
+                                  size="sm"
+                                  variant="secondary"
+                                  onClick={() => setEditingGiftId(gift.id)}
+                                >
+                                  <Edit className="h-4 w-4 mr-2" />
+                                  Edit Image
+                                </Button>
+                              </DialogTrigger>
+                              <DialogContent>
+                                <DialogHeader>
+                                  <DialogTitle>Update Gift Image</DialogTitle>
+                                  <DialogDescription>
+                                    Upload an image or paste an image URL
+                                  </DialogDescription>
+                                </DialogHeader>
+                                <div className="space-y-4">
+                                  <div className="space-y-2">
+                                    <Label htmlFor={`imageUrl-${gift.id}`}>Image URL</Label>
+                                    <Input
+                                      id={`imageUrl-${gift.id}`}
+                                      value={editingImageUrl}
+                                      onChange={(e) => setEditingImageUrl(e.target.value)}
+                                      placeholder="https://example.com/image.jpg"
+                                    />
+                                    <Button 
+                                      onClick={handleUpdateGiftImage}
+                                      disabled={!editingImageUrl}
+                                      className="w-full"
+                                    >
+                                      Update Image
+                                    </Button>
+                                  </div>
+                                  <Separator />
+                                  <div className="space-y-2">
+                                    <Label htmlFor={`imageUpload-${gift.id}`}>Upload Image</Label>
+                                    <Input
+                                      id={`imageUpload-${gift.id}`}
+                                      type="file"
+                                      accept="image/*"
+                                      onChange={(e) => {
+                                        handleImageUpload(e, false);
+                                        setShowImageEdit(false);
+                                      }}
+                                    />
+                                  </div>
+                                </div>
+                              </DialogContent>
+                            </Dialog>
+                          </div>
+                        </div>
+                        <CardContent className="p-4">
+                          <div className="space-y-2">
+                            <div className="flex justify-between items-start">
+                              <h3 className="font-medium line-clamp-1">{gift.name}</h3>
+                              <Dialog>
+                                <DialogTrigger asChild>
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    className="text-destructive"
+                                  >
+                                    <Trash2 className="h-4 w-4" />
+                                  </Button>
+                                </DialogTrigger>
+                                <DialogContent>
+                                  <DialogHeader>
+                                    <DialogTitle>Remove Gift</DialogTitle>
+                                    <DialogDescription>
+                                      Are you sure you want to remove this gift?
+                                      This action cannot be undone.
+                                    </DialogDescription>
+                                  </DialogHeader>
+                                  <Button
+                                    onClick={() => handleRemoveGift(gift.id)}
+                                    className="w-full"
+                                  >
+                                    Remove
+                                  </Button>
+                                </DialogContent>
+                              </Dialog>
+                            </div>
+                            {gift.link && (
+                              <a
+                                href={gift.link}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-xs text-primary hover:underline flex items-center gap-1"
+                              >
+                                View Product
+                                <ExternalLink className="h-3 w-3" />
+                              </a>
+                            )}
+                          </div>
+                        </CardContent>
+                      </Card>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    {gifts.length > 0 && (
+                      <div className="flex items-center gap-3 p-3 bg-muted rounded-lg border font-medium text-sm">
+                        <Checkbox
+                          checked={selectedGiftIds.size === gifts.length && gifts.length > 0}
+                          onCheckedChange={toggleSelectAll}
                         />
+                        <div className="w-12 text-center">Image</div>
+                        <div className="flex-1">Name</div>
+                        <div className="w-24">Status</div>
+                        <div className="w-20 text-center">Actions</div>
+                      </div>
+                    )}
+                    {gifts.map((gift, index) => (
+                      <div
+                        key={gift.id}
+                        draggable
+                        onDragStart={(e) => handleDragStart(e, gift.id)}
+                        onDragOver={handleDragOver}
+                        onDrop={(e) => handleDrop(e, gift.id)}
+                        onDragEnd={handleDragEnd}
+                        className={`flex items-center gap-3 p-3 bg-card rounded-lg border hover:bg-accent/50 transition-colors cursor-move ${
+                          draggedGiftId === gift.id ? 'opacity-50' : ''
+                        }`}
+                      >
+                        <Checkbox
+                          checked={selectedGiftIds.has(gift.id)}
+                          onCheckedChange={() => toggleGiftSelection(gift.id)}
+                          onClick={(e) => e.stopPropagation()}
+                        />
+                        <GripVertical className="h-4 w-4 text-muted-foreground cursor-grab active:cursor-grabbing" />
+                        <div className="w-12 h-12 bg-muted rounded flex items-center justify-center overflow-hidden flex-shrink-0">
+                          <img
+                            src={gift.imageUrl}
+                            alt={gift.name}
+                            className="max-w-full max-h-full object-contain"
+                            onError={(e) => {
+                              console.error('Gift image failed to load:', gift.imageUrl);
+                              e.currentTarget.src = 'https://images.unsplash.com/photo-1513885535751-8b9238bd345a?w=400&q=80';
+                            }}
+                          />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <h3 className="font-medium truncate">{gift.name}</h3>
+                          {gift.link && (
+                            <a
+                              href={gift.link}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-xs text-primary hover:underline flex items-center gap-1"
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              View Product
+                              <ExternalLink className="h-3 w-3" />
+                            </a>
+                          )}
+                        </div>
                         <Badge
-                          className="absolute top-2 right-2"
+                          className="w-24 justify-center"
                           variant={
                             gift.status === "hidden"
                               ? "outline"
@@ -701,7 +1119,7 @@ const AdminDashboard = () => {
                         >
                           {gift.status}
                         </Badge>
-                        <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                        <div className="flex items-center gap-1">
                           <Dialog 
                             open={showImageEdit && editingGiftId === gift.id} 
                             onOpenChange={(open) => {
@@ -711,12 +1129,14 @@ const AdminDashboard = () => {
                           >
                             <DialogTrigger asChild>
                               <Button
+                                variant="ghost"
                                 size="sm"
-                                variant="secondary"
-                                onClick={() => setEditingGiftId(gift.id)}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setEditingGiftId(gift.id);
+                                }}
                               >
-                                <Edit className="h-4 w-4 mr-2" />
-                                Edit Image
+                                <Edit className="h-4 w-4" />
                               </Button>
                             </DialogTrigger>
                             <DialogContent>
@@ -728,9 +1148,9 @@ const AdminDashboard = () => {
                               </DialogHeader>
                               <div className="space-y-4">
                                 <div className="space-y-2">
-                                  <Label htmlFor={`imageUrl-${gift.id}`}>Image URL</Label>
+                                  <Label htmlFor={`imageUrl-list-${gift.id}`}>Image URL</Label>
                                   <Input
-                                    id={`imageUrl-${gift.id}`}
+                                    id={`imageUrl-list-${gift.id}`}
                                     value={editingImageUrl}
                                     onChange={(e) => setEditingImageUrl(e.target.value)}
                                     placeholder="https://example.com/image.jpg"
@@ -745,9 +1165,9 @@ const AdminDashboard = () => {
                                 </div>
                                 <Separator />
                                 <div className="space-y-2">
-                                  <Label htmlFor={`imageUpload-${gift.id}`}>Upload Image</Label>
+                                  <Label htmlFor={`imageUpload-list-${gift.id}`}>Upload Image</Label>
                                   <Input
-                                    id={`imageUpload-${gift.id}`}
+                                    id={`imageUpload-list-${gift.id}`}
                                     type="file"
                                     accept="image/*"
                                     onChange={(e) => {
@@ -759,55 +1179,38 @@ const AdminDashboard = () => {
                               </div>
                             </DialogContent>
                           </Dialog>
+                          <Dialog>
+                            <DialogTrigger asChild>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="text-destructive"
+                                onClick={(e) => e.stopPropagation()}
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            </DialogTrigger>
+                            <DialogContent>
+                              <DialogHeader>
+                                <DialogTitle>Remove Gift</DialogTitle>
+                                <DialogDescription>
+                                  Are you sure you want to remove this gift?
+                                  This action cannot be undone.
+                                </DialogDescription>
+                              </DialogHeader>
+                              <Button
+                                onClick={() => handleRemoveGift(gift.id)}
+                                className="w-full"
+                              >
+                                Remove
+                              </Button>
+                            </DialogContent>
+                          </Dialog>
                         </div>
                       </div>
-                      <CardContent className="p-4">
-                        <div className="space-y-2">
-                          <div className="flex justify-between items-start">
-                            <h3 className="font-medium line-clamp-1">{gift.name}</h3>
-                            <Dialog>
-                              <DialogTrigger asChild>
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  className="text-destructive"
-                                >
-                                  <Trash2 className="h-4 w-4" />
-                                </Button>
-                              </DialogTrigger>
-                              <DialogContent>
-                                <DialogHeader>
-                                  <DialogTitle>Remove Gift</DialogTitle>
-                                  <DialogDescription>
-                                    Are you sure you want to remove this gift?
-                                    This action cannot be undone.
-                                  </DialogDescription>
-                                </DialogHeader>
-                                <Button
-                                  onClick={() => handleRemoveGift(gift.id)}
-                                  className="w-full"
-                                >
-                                  Remove
-                                </Button>
-                              </DialogContent>
-                            </Dialog>
-                          </div>
-                          {gift.link && (
-                            <a
-                              href={gift.link}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="text-xs text-primary hover:underline flex items-center gap-1"
-                            >
-                              View Product
-                              <ExternalLink className="h-3 w-3" />
-                            </a>
-                          )}
-                        </div>
-                      </CardContent>
-                    </Card>
-                  ))}
-                </div>
+                    ))}
+                  </div>
+                )}
               </ScrollArea>
             </CardContent>
           </Card>
