@@ -265,30 +265,29 @@ const AdminDashboard = () => {
                   </div>
                 </div>
               </div>
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <Label
-                    htmlFor="allowStealback"
-                    className="text-muted-foreground"
-                  >
-                    Allow Immediate Stealback
-                  </Label>
-                  <Switch
-                    id="allowStealback"
-                    checked={gameConfig.allowImmediateStealback}
-                    onCheckedChange={(checked) =>
-                      setGameConfig({
-                        ...gameConfig,
-                        allowImmediateStealback: checked,
-                      })
-                    }
-                    disabled={true}
-                  />
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div></div>
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <Label htmlFor="allowStealback">
+                      Allow Immediate Stealback
+                    </Label>
+                    <Switch
+                      id="allowStealback"
+                      checked={gameConfig.allowImmediateStealback}
+                      onCheckedChange={(checked) =>
+                        setGameConfig({
+                          ...gameConfig,
+                          allowImmediateStealback: checked,
+                        })
+                      }
+                    />
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Note: Immediate stealbacks are not allowed in standard White
+                    Elephant rules
+                  </p>
                 </div>
-                <p className="text-xs text-muted-foreground">
-                  Note: Immediate stealbacks are not allowed in standard White
-                  Elephant rules
-                </p>
               </div>
             </CardContent>
             <CardFooter>
