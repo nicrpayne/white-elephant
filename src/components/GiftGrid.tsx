@@ -121,12 +121,12 @@ const GiftCard = ({ gift, giftNumber, onClick, isSelectable }: GiftCardProps) =>
               <Gift size={48} className="text-purple-500 relative z-10" />
             </div>
           ) : (
-            <div className="relative aspect-square w-full">
+            <div className="relative aspect-square w-full bg-white">
               {gift.imageUrl ? (
                 <img
                   src={gift.imageUrl}
                   alt={gift.name}
-                  className="h-full w-full object-cover"
+                  className="h-full w-full object-contain"
                 />
               ) : (
                 <div className="bg-muted flex items-center justify-center h-full w-full">
