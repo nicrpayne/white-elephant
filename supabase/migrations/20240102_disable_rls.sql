@@ -1,0 +1,5 @@
+-- Disable RLS on all tables to allow unrestricted access
+ALTER TABLE game_sessions DISABLE ROW LEVEL SECURITY;
+ALTER TABLE players DISABLE ROW LEVEL SECURITY;
+ALTER TABLE gifts DISABLE ROW LEVEL SECURITY;
+ALTER TABLE game_actions DISABLE ROW LEVEL SECURITY;
