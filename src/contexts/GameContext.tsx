@@ -220,7 +220,10 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
   const loadGifts = async (sessionId: string) => {
     const { data, error } = await supabase
       .from('gifts')
-      .select('*')
+      .select(`
+        *,
+        owner:players!gifts_current_owner_id_fkey(display_name)
+      `)
       .eq('session_id', sessionId);
 
     if (!error && data) {
@@ -233,6 +236,7 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
         status: g.status,
         stealCount: g.steal_count,
         currentOwnerId: g.current_owner_id,
+        ownerName: g.owner?.display_name || undefined,
       }));
       setGameState(prev => ({ ...prev, gifts }));
     }
