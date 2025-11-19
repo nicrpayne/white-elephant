@@ -54,13 +54,15 @@ interface GameContextType {
   gameState: GameState;
   isLoading: boolean;
   createSession: () => Promise<string>;
-  joinSession: (sessionCode: string, playerName: string) => Promise<string>;
-  addGift: (gift: Omit<Gift, 'id' | 'stealCount' | 'currentOwnerId' | 'status'>) => Promise<void>;
+  joinSession: (sessionCode: string, displayName: string) => Promise<string>;
+  addGift: (gift: Omit<Gift, 'id' | 'status' | 'stealCount' | 'currentOwnerId'>) => Promise<void>;
   removeGift: (giftId: string) => Promise<void>;
   updateGift: (giftId: string, updates: Partial<Gift>) => Promise<void>;
   updateGameStatus: (status: GameState['gameStatus']) => Promise<void>;
   updateGameConfig: (config: Partial<GameConfig>) => Promise<void>;
   startGame: () => Promise<void>;
+  pickGift: (giftId: string) => Promise<void>;
+  stealGift: (giftId: string) => Promise<void>;
   setGifts: (gifts: Gift[]) => void;
   setPlayers: (players: Player[]) => void;
   setGameStatus: (status: GameState['gameStatus']) => void;
@@ -69,6 +71,8 @@ interface GameContextType {
   setGameConfig: (config: GameConfig) => void;
   addPlayer: (player: Player) => void;
   removePlayer: (playerId: string) => void;
+  loadPlayers: (sessionId: string) => Promise<void>;
+  loadGifts: (sessionId: string) => Promise<void>;
 }
 
 const GameContext = createContext<GameContextType | undefined>(undefined);
@@ -96,6 +100,8 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
   useEffect(() => {
     if (!gameState.sessionId) return;
 
+    console.log('Setting up real-time subscription for session:', gameState.sessionId);
+
     const channel = supabase
       .channel(`game:${gameState.sessionId}`)
       .on(
@@ -106,8 +112,12 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
           table: 'players',
           filter: `session_id=eq.${gameState.sessionId}`,
         },
-        async () => {
-          await loadPlayers(gameState.sessionId!);
+        (payload) => {
+          console.log('Players table changed:', payload);
+          // Load players without await to prevent blocking
+          loadPlayers(gameState.sessionId!).catch(err => 
+            console.error('Error loading players after change:', err)
+          );
         }
       )
       .on(
@@ -118,8 +128,11 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
           table: 'gifts',
           filter: `session_id=eq.${gameState.sessionId}`,
         },
-        async () => {
-          await loadGifts(gameState.sessionId!);
+        (payload) => {
+          console.log('Gifts table changed:', payload);
+          loadGifts(gameState.sessionId!).catch(err => 
+            console.error('Error loading gifts after change:', err)
+          );
         }
       )
       .on(
@@ -130,15 +143,24 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
           table: 'game_sessions',
           filter: `id=eq.${gameState.sessionId}`,
         },
-        async () => {
-          await loadSession(gameState.sessionId!);
+        (payload) => {
+          console.log('Game session changed:', payload);
+          loadSession(gameState.sessionId!).catch(err => 
+            console.error('Error loading session after change:', err)
+          );
         }
       )
-      .subscribe();
+      .subscribe((status) => {
+        console.log('Subscription status:', status);
+        if (status === 'SUBSCRIBED') {
+          console.log('✅ Successfully subscribed to real-time updates');
+        }
+      });
 
     setRealtimeChannel(channel);
 
     return () => {
+      console.log('Unsubscribing from real-time channel');
       channel.unsubscribe();
     };
   }, [gameState.sessionId]);
@@ -170,6 +192,7 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
 
   // Load players
   const loadPlayers = async (sessionId: string) => {
+    console.log('Loading players for session:', sessionId);
     const { data, error } = await supabase
       .from('players')
       .select('*')
@@ -177,7 +200,8 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
       .order('order_index');
 
     if (!error && data) {
-      const players: Player[] = data.map((p: DBPlayer) => ({
+      console.log('Players loaded:', data);
+      const players: Player[] = data.map((p: any) => ({
         id: p.id,
         displayName: p.display_name,
         orderIndex: p.order_index,
@@ -187,6 +211,8 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
         hasCompletedTurn: p.has_completed_turn,
       }));
       setGameState(prev => ({ ...prev, players }));
+    } else if (error) {
+      console.error('Error loading players:', error);
     }
   };
 
@@ -198,7 +224,7 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
       .eq('session_id', sessionId);
 
     if (!error && data) {
-      const gifts: Gift[] = data.map((g: DBGift) => ({
+      const gifts: Gift[] = data.map((g: any) => ({
         id: g.id,
         name: g.name,
         imageUrl: g.image_url,
@@ -218,6 +244,8 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
     try {
       const sessionCode = generateSessionCode();
       
+      console.log('Creating session with code:', sessionCode);
+      
       const { data, error } = await supabase
         .from('game_sessions')
         .insert({
@@ -230,7 +258,12 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
         .select()
         .single();
 
-      if (error) throw error;
+      if (error) {
+        console.error('Supabase error creating session:', error);
+        throw error;
+      }
+      
+      console.log('Session created successfully:', data);
 
       const session = data as DBGameSession;
       setGameState(prev => ({
@@ -253,7 +286,7 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
   };
 
   // Join an existing session
-  const joinSession = async (sessionCode: string, playerName: string): Promise<string> => {
+  const joinSession = async (sessionCode: string, displayName: string): Promise<string> => {
     setIsLoading(true);
     try {
       // Find session by code
@@ -284,7 +317,7 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
         .from('players')
         .insert({
           session_id: session.id,
-          display_name: playerName,
+          display_name: displayName,
           order_index: (count || 0) + 1,
           is_admin: false,
         })
@@ -314,12 +347,15 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
   };
 
   // Add gift
-  const addGift = async (gift: Omit<Gift, 'id' | 'stealCount' | 'currentOwnerId' | 'status'>) => {
+  const addGift = async (gift: Omit<Gift, 'id' | 'status' | 'stealCount' | 'currentOwnerId'>) => {
     let sessionId = gameState.sessionId;
     
     if (!sessionId) {
+      console.log('No session ID, creating new session...');
       sessionId = await createSession();
     }
+
+    console.log('Adding gift to session:', sessionId, gift);
 
     const { error } = await supabase.from('gifts').insert({
       session_id: sessionId,
@@ -332,9 +368,11 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
     });
 
     if (error) {
-      console.error('Error adding gift:', error);
+      console.error('Supabase error adding gift:', error);
       throw error;
     }
+    
+    console.log('Gift added successfully');
 
     // Manually refresh gifts list (realtime subscription will also update)
     await loadGifts(sessionId);
@@ -366,6 +404,11 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
     if (error) {
       console.error('Error updating gift:', error);
       throw error;
+    }
+
+    // Manually refresh gifts list (realtime subscription will also update)
+    if (gameState.sessionId) {
+      await loadGifts(gameState.sessionId);
     }
   };
 
@@ -408,37 +451,136 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
   const startGame = async () => {
     if (!gameState.sessionId) return;
 
-    const { data: players } = await supabase
-      .from('players')
-      .select('*')
-      .eq('session_id', gameState.sessionId)
-      .order('order_index');
+    try {
+      const { data: players } = await supabase
+        .from('players')
+        .select('*')
+        .eq('session_id', gameState.sessionId)
+        .order('order_index');
 
-    if (!players || players.length < 2) {
-      throw new Error('Need at least 2 players to start');
-    }
-
-    // Randomize if configured
-    if (gameState.gameConfig.randomizeOrder) {
-      const shuffled = [...players].sort(() => Math.random() - 0.5);
-      for (let i = 0; i < shuffled.length; i++) {
-        await supabase
-          .from('players')
-          .update({ order_index: i + 1 })
-          .eq('id', shuffled[i].id);
+      if (!players || players.length < 2) {
+        throw new Error('Need at least 2 players to start');
       }
+
+      // Randomize if configured
+      if (gameState.gameConfig.randomizeOrder) {
+        const shuffled = [...players].sort(() => Math.random() - 0.5);
+        for (let i = 0; i < shuffled.length; i++) {
+          await supabase
+            .from('players')
+            .update({ order_index: i + 1 })
+            .eq('id', shuffled[i].id);
+        }
+      }
+
+      // Set first player as active
+      const firstPlayer = players.sort((a, b) => a.order_index - b.order_index)[0];
+
+      await supabase
+        .from('game_sessions')
+        .update({
+          game_status: 'active',
+          active_player_id: firstPlayer.id,
+        })
+        .eq('id', gameState.sessionId);
+
+      // The real-time subscriptions will automatically update the state
+    } catch (error) {
+      console.error('Error starting game:', error);
+      throw error;
     }
+  };
 
-    // Set first player as active
-    const firstPlayer = players.sort((a, b) => a.order_index - b.order_index)[0];
+  // Pick a hidden gift
+  const pickGift = async (giftId: string) => {
+    if (!gameState.sessionId || !gameState.activePlayerId) return;
 
-    await supabase
-      .from('game_sessions')
-      .update({
-        game_status: 'active',
-        active_player_id: firstPlayer.id,
-      })
-      .eq('id', gameState.sessionId);
+    try {
+      // Update gift status to revealed and assign to current player
+      await supabase
+        .from('gifts')
+        .update({
+          status: 'revealed',
+          current_owner_id: gameState.activePlayerId,
+        })
+        .eq('id', giftId);
+
+      // Update player's current gift
+      await supabase
+        .from('players')
+        .update({
+          current_gift_id: giftId,
+          has_completed_turn: true,
+        })
+        .eq('id', gameState.activePlayerId);
+
+      // Move to next player
+      const currentPlayerIndex = gameState.players.findIndex(p => p.id === gameState.activePlayerId);
+      const nextPlayerIndex = (currentPlayerIndex + 1) % gameState.players.length;
+      const nextPlayer = gameState.players[nextPlayerIndex];
+
+      await supabase
+        .from('game_sessions')
+        .update({
+          active_player_id: nextPlayer.id,
+        })
+        .eq('id', gameState.sessionId);
+    } catch (error) {
+      console.error('Error picking gift:', error);
+      throw error;
+    }
+  };
+
+  // Steal a revealed gift
+  const stealGift = async (giftId: string) => {
+    if (!gameState.sessionId || !gameState.activePlayerId) return;
+
+    try {
+      const gift = gameState.gifts.find(g => g.id === giftId);
+      if (!gift || !gift.currentOwnerId) return;
+
+      const previousOwnerId = gift.currentOwnerId;
+      const newStealCount = gift.stealCount + 1;
+
+      // Update gift - assign to new owner and increment steal count
+      await supabase
+        .from('gifts')
+        .update({
+          current_owner_id: gameState.activePlayerId,
+          steal_count: newStealCount,
+          status: newStealCount >= 2 ? 'locked' : 'revealed',
+        })
+        .eq('id', giftId);
+
+      // Update current player's gift
+      await supabase
+        .from('players')
+        .update({
+          current_gift_id: giftId,
+          has_completed_turn: true,
+        })
+        .eq('id', gameState.activePlayerId);
+
+      // Clear previous owner's gift
+      await supabase
+        .from('players')
+        .update({
+          current_gift_id: null,
+          has_completed_turn: false,
+        })
+        .eq('id', previousOwnerId);
+
+      // Previous owner gets the next turn
+      await supabase
+        .from('game_sessions')
+        .update({
+          active_player_id: previousOwnerId,
+        })
+        .eq('id', gameState.sessionId);
+    } catch (error) {
+      console.error('Error stealing gift:', error);
+      throw error;
+    }
   };
 
   // Local setters (for backward compatibility, but prefer async methods)
@@ -464,6 +606,8 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
         updateGameStatus,
         updateGameConfig,
         startGame,
+        pickGift,
+        stealGift,
         setGifts,
         setPlayers,
         setGameStatus,
@@ -472,6 +616,8 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
         setGameConfig,
         addPlayer,
         removePlayer,
+        loadPlayers,
+        loadGifts,
       }}
     >
       {children}

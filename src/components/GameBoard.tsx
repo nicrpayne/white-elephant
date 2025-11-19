@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -7,6 +7,7 @@ import { Pause, Play, SkipForward, AlertCircle } from "lucide-react";
 import GiftGrid from "./GiftGrid";
 import PlayerTurnPanel from "./PlayerTurnPanel";
 import { useGame } from "@/contexts/GameContext";
+import { useSearchParams } from "react-router-dom";
 
 interface Gift {
   id: string;
@@ -43,16 +44,66 @@ interface GameBoardProps {
 }
 
 const GameBoard = () => {
-  const { gameState, setGameStatus } = useGame();
-  const { gifts, players, activePlayerId, roundIndex, gameStatus, sessionCode } = gameState;
-  
+  const [searchParams] = useSearchParams();
+  const playerId = searchParams.get("playerId");
+  const { gameState, pickGift, stealGift, updateGameStatus } = useGame();
   const [activeTab, setActiveTab] = useState("board");
+  const [selectedGiftId, setSelectedGiftId] = useState<string | null>(null);
 
-  const activePlayer = players.find((player) => player.id === activePlayerId);
+  const { gifts, players, gameStatus, activePlayerId, currentPlayerId, sessionCode } = gameState;
 
-  const handlePauseGame = () => setGameStatus("paused");
-  const handleResumeGame = () => setGameStatus("active");
-  const handleEndGame = () => setGameStatus("ended");
+  // Calculate round index
+  const roundIndex = players.filter(p => p.hasCompletedTurn).length + 1;
+
+  // Determine if it's this player's turn
+  const isMyTurn = playerId && activePlayerId === playerId;
+  const currentPlayer = players.find(p => p.id === playerId);
+  const activePlayer = players.find(p => p.id === activePlayerId);
+
+  const handleGiftSelect = async (giftId: string) => {
+    if (!isMyTurn) return;
+
+    const gift = gifts.find(g => g.id === giftId);
+    if (!gift) return;
+
+    try {
+      if (gift.status === "hidden") {
+        // Pick a new gift
+        await pickGift(giftId);
+      } else if (gift.status === "revealed" && gift.stealCount < 2) {
+        // Steal a revealed gift
+        await stealGift(giftId);
+      }
+    } catch (error) {
+      console.error("Error selecting gift:", error);
+      alert("Failed to select gift. Please try again.");
+    }
+  };
+
+  const handlePauseGame = async () => {
+    try {
+      await updateGameStatus("paused");
+    } catch (error) {
+      console.error("Error pausing game:", error);
+    }
+  };
+
+  const handleResumeGame = async () => {
+    try {
+      await updateGameStatus("active");
+    } catch (error) {
+      console.error("Error resuming game:", error);
+    }
+  };
+
+  const handleEndGame = async () => {
+    try {
+      await updateGameStatus("ended");
+    } catch (error) {
+      console.error("Error ending game:", error);
+    }
+  };
+
   const handleSkipTurn = () => console.log("Turn skipped");
 
   return (
@@ -126,7 +177,13 @@ const GameBoard = () => {
               </TabsList>
 
               <TabsContent value="board" className="mt-4">
-                <GiftGrid gifts={gifts} />
+                <GiftGrid 
+                  gifts={gifts} 
+                  onGiftSelect={handleGiftSelect}
+                  activePlayerId={activePlayerId}
+                  isPlayerTurn={isMyTurn || false}
+                  gameStatus={gameStatus}
+                />
               </TabsContent>
 
               <TabsContent value="players" className="mt-4">

@@ -39,6 +39,7 @@ import {
 } from "lucide-react";
 import QRCode from 'qrcode';
 import { useGame } from "@/contexts/GameContext";
+import GameBoard from "./GameBoard";
 
 interface Gift {
   id: string;
@@ -81,7 +82,8 @@ const AdminDashboard = () => {
     setPlayers, 
     setGameStatus, 
     setGameConfig, 
-    setActivePlayerId 
+    setActivePlayerId,
+    loadPlayers
   } = useGame();
   
   const [currentStep, setCurrentStep] = useState(0);
@@ -128,11 +130,38 @@ const AdminDashboard = () => {
   const handleOpenLobby = async () => {
     try {
       // Create session if not exists
-      if (!gameState.sessionId) {
-        await createSession();
+      let sessionId = gameState.sessionId;
+      if (!sessionId) {
+        sessionId = await createSession();
       }
+      
+      // Force load players to ensure we have the latest data
+      if (sessionId && loadPlayers) {
+        await loadPlayers(sessionId);
+      }
+      
       await updateGameStatus("lobby");
-      setCurrentStep(2);
+      
+      // Generate QR code immediately
+      const inviteUrl = `${window.location.origin}/join?code=${sessionCode}`;
+      try {
+        const qrCodeDataUrl = await QRCode.toDataURL(inviteUrl, {
+          width: 400,
+          margin: 2,
+          color: {
+            dark: '#000000',
+            light: '#FFFFFF'
+          }
+        });
+        setQrCodeUrl(qrCodeDataUrl);
+      } catch (err) {
+        console.error('Error generating QR code:', err);
+        const fallbackQrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=400x400&data=${encodeURIComponent(inviteUrl)}`;
+        setQrCodeUrl(fallbackQrUrl);
+      }
+      
+      setShowQrCode(true);
+      setCurrentStep(3);
     } catch (error) {
       console.error('Error opening lobby:', error);
       alert('Failed to open lobby. Please try again.');
@@ -177,42 +206,50 @@ const AdminDashboard = () => {
             const asin = asinMatch[1];
             console.log('Found Amazon ASIN:', asin);
             
-            // Try to fetch the page directly (some proxies work better for Amazon)
-            try {
-              const response = await fetch(`https://corsproxy.io/?${encodeURIComponent(url)}`, {
-                signal: AbortSignal.timeout(8000)
-              });
-              const html = await response.text();
+            // Extract product name from URL slug (the part before /dp/)
+            const urlParts = url.split('/');
+            const dpIndex = urlParts.findIndex(part => part === 'dp' || part === 'product');
+            
+            if (dpIndex > 0 && urlParts[dpIndex - 1]) {
+              const slug = urlParts[dpIndex - 1];
+              // Convert URL slug to readable title
+              // Example: "like-new-amazon-kindle" → "Like New Amazon Kindle"
+              title = slug
+                .split('-')
+                .map(word => {
+                  // Capitalize first letter of each word
+                  const capitalized = word.charAt(0).toUpperCase() + word.slice(1).toLowerCase();
+                  return capitalized;
+                })
+                .join(' ')
+                .substring(0, 80); // Limit length
               
-              // Extract title from various possible locations
-              const titleMatch = html.match(/<span id="productTitle"[^>]*>([^<]+)<\/span>/i) ||
-                                html.match(/<title>([^<]+)<\/title>/i);
+              // Clean up common words to look more natural
+              title = title
+                .replace(/\bAnd\b/g, 'and')
+                .replace(/\bOr\b/g, 'or')
+                .replace(/\bThe\b/g, 'the')
+                .replace(/\bA\b/g, 'a')
+                .replace(/\bAn\b/g, 'an')
+                .replace(/\bIn\b/g, 'in')
+                .replace(/\bOn\b/g, 'on')
+                .replace(/\bAt\b/g, 'at')
+                .replace(/\bTo\b/g, 'to')
+                .replace(/\bFor\b/g, 'for')
+                .replace(/\bOf\b/g, 'of')
+                .replace(/\bWith\b/g, 'with');
               
-              if (titleMatch) {
-                title = titleMatch[1].trim().replace(/\s+/g, ' ').replace(' : Amazon.com', '').replace(' - Amazon.com', '');
-              }
-              
-              // Extract image - Amazon uses specific patterns
-              const imageMatch = html.match(/"hiRes":"([^"]+)"/i) ||
-                                html.match(/"large":"([^"]+)"/i) ||
-                                html.match(/data-old-hires="([^"]+)"/i) ||
-                                html.match(/data-a-dynamic-image="[^"]*([^"]+\.jpg)/i);
-              
-              if (imageMatch) {
-                image = imageMatch[1].replace(/\\u0026/g, '&').replace(/\\/g, '');
-              }
-              
-              // Try to get description
-              const descMatch = html.match(/<meta name="description" content="([^"]+)"/i);
-              if (descMatch) {
-                description = descMatch[1].trim();
-              }
-              
-              console.log('Extracted Amazon data:', { title, image, description });
-            } catch (e) {
-              console.log('Direct fetch failed, using ASIN fallback');
-              title = `Amazon Product (${asin})`;
+              console.log('Extracted title from URL:', title);
+            } else {
+              title = 'Amazon Product';
             }
+            
+            description = `Amazon product preview unavailable (Amazon blocks automated requests). The product link works perfectly - players will see the full details when they click "View Product".`;
+            
+            // Use nice fallback image
+            image = 'https://images.unsplash.com/photo-1513885535751-8b9238bd345a?w=400&q=80';
+            
+            console.log('Amazon URL processed:', { title, asin });
           }
         } else {
           // For non-Amazon sites, use the existing approach
@@ -385,9 +422,11 @@ const AdminDashboard = () => {
       try {
         // Ensure session exists
         if (!gameState.sessionId) {
+          console.log('Creating session before adding gift...');
           await createSession();
         }
 
+        console.log('Calling addGiftAsync with:', previewData);
         await addGiftAsync({
           name: previewData.title,
           imageUrl: previewData.image,
@@ -398,7 +437,17 @@ const AdminDashboard = () => {
         setPreviewData(null);
       } catch (error) {
         console.error('Error adding gift:', error);
-        alert('Failed to add gift. Please try again.');
+        
+        // Show more helpful error message
+        if (error instanceof Error) {
+          if (error.message.includes('Load failed') || error.message.includes('network')) {
+            alert('Network error: Unable to connect to the database. Please check your internet connection and try again. If the problem persists, the Supabase project may be paused.');
+          } else {
+            alert(`Failed to add gift: ${error.message}`);
+          }
+        } else {
+          alert('Failed to add gift. Please try again.');
+        }
       }
     }
   };
@@ -625,7 +674,10 @@ const AdminDashboard = () => {
       setShowQrCode(true);
     } catch (err) {
       console.error('Error generating QR code:', err);
-      alert('Failed to generate QR code');
+      // Fallback: use online QR code generator
+      const fallbackQrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=256x256&data=${encodeURIComponent(inviteUrl)}`;
+      setQrCodeUrl(fallbackQrUrl);
+      setShowQrCode(true);
     }
   };
 
@@ -1581,253 +1633,75 @@ const AdminDashboard = () => {
         </div>
       ) : (
         // Existing tabs for active game management
-        <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-          <TabsList className="grid grid-cols-3 mb-6">
-            <TabsTrigger value="gifts">Gift Management</TabsTrigger>
-            <TabsTrigger value="players">Player Management</TabsTrigger>
-            <TabsTrigger value="controls">Game Controls</TabsTrigger>
-          </TabsList>
+        <div className="space-y-6">
+          {/* Show GameBoard when game is active or paused */}
+          {(gameStatus === "active" || gameStatus === "paused") && (
+            <GameBoard />
+          )}
+          
+          <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+            <TabsList className="grid grid-cols-3 mb-6">
+              <TabsTrigger value="gifts">Gift Management</TabsTrigger>
+              <TabsTrigger value="players">Player Management</TabsTrigger>
+              <TabsTrigger value="controls">Game Controls</TabsTrigger>
+            </TabsList>
 
-          {/* Gift Management Tab */}
-          <TabsContent value="gifts" className="space-y-4">
-            <Card>
-              <CardHeader>
-                <CardTitle>Add New Gift</CardTitle>
-                <CardDescription>
-                  Paste a product link from Amazon, Etsy, or any website
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="giftUrl">Product Link</Label>
-                    <div className="flex gap-2">
-                      <Input
-                        id="giftUrl"
-                        value={newGiftUrl}
-                        onChange={(e) => handleUrlChange(e.target.value)}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter' && previewData) {
-                            handleAddGift();
-                          }
-                        }}
-                        placeholder="https://amazon.com/product/..."
-                        className="flex-1"
-                      />
-                      {isLoadingPreview && (
-                        <div className="flex items-center px-3">
-                          <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
-                        </div>
-                      )}
-                    </div>
-                    <p className="text-xs text-muted-foreground">
-                      Paste a product link and the preview will load automatically
-                    </p>
-                  </div>
-
-                  {previewData && (
-                    <Card className="overflow-hidden border-2 border-primary">
-                      <div className="flex flex-col sm:flex-row">
-                        <div className="sm:w-1/3 min-h-[200px] bg-muted relative group flex items-center justify-center p-4">
-                          <img
-                            src={previewData.image}
-                            alt={previewData.title}
-                            className="max-w-full max-h-[300px] object-contain"
-                            onError={(e) => {
-                              console.error('Image failed to load:', previewData.image);
-                              e.currentTarget.src = 'https://images.unsplash.com/photo-1513885535751-8b9238bd345a?w=400&q=80';
-                            }}
-                          />
-                          <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
-                            <Dialog open={showImageEdit && !editingGiftId} onOpenChange={setShowImageEdit}>
-                              <DialogTrigger asChild>
-                                <Button
-                                  size="sm"
-                                  variant="secondary"
-                                >
-                                  <Edit className="h-4 w-4 mr-2" />
-                                  Edit Image
-                                </Button>
-                              </DialogTrigger>
-                              <DialogContent>
-                                <DialogHeader>
-                                  <DialogTitle>Update Gift Image</DialogTitle>
-                                  <DialogDescription>
-                                    Upload an image or paste an image URL
-                                  </DialogDescription>
-                                </DialogHeader>
-                                <div className="space-y-4">
-                                  <div className="space-y-2">
-                                    <Label htmlFor="imageUrl">Image URL</Label>
-                                    <Input
-                                      id="imageUrl"
-                                      value={editingImageUrl}
-                                      onChange={(e) => setEditingImageUrl(e.target.value)}
-                                      placeholder="https://example.com/image.jpg"
-                                    />
-                                    <Button 
-                                      onClick={handleUpdatePreviewImage}
-                                      disabled={!editingImageUrl}
-                                      className="w-full"
-                                    >
-                                      Update Image
-                                    </Button>
-                                  </div>
-                                  <Separator />
-                                  <div className="space-y-2">
-                                    <Label htmlFor="imageUpload">Upload Image</Label>
-                                    <Input
-                                      id="imageUpload"
-                                      type="file"
-                                      accept="image/*"
-                                      onChange={(e) => {
-                                        handleImageUpload(e, true);
-                                        setShowImageEdit(false);
-                                      }}
-                                    />
-                                  </div>
-                                </div>
-                              </DialogContent>
-                            </Dialog>
+            {/* Gift Management Tab */}
+            <TabsContent value="gifts" className="space-y-4">
+              <Card>
+                <CardHeader>
+                  <CardTitle>Add New Gift</CardTitle>
+                  <CardDescription>
+                    Paste a product link from Amazon, Etsy, or any website
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="giftUrl">Product Link</Label>
+                      <div className="flex gap-2">
+                        <Input
+                          id="giftUrl"
+                          value={newGiftUrl}
+                          onChange={(e) => handleUrlChange(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' && previewData) {
+                              handleAddGift();
+                            }
+                          }}
+                          placeholder="https://amazon.com/product/..."
+                          className="flex-1"
+                        />
+                        {isLoadingPreview && (
+                          <div className="flex items-center px-3">
+                            <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
                           </div>
-                        </div>
-                        <div className="flex-1 p-4">
-                          <h3 className="font-semibold text-lg mb-2">
-                            {previewData.title}
-                          </h3>
-                          {previewData.description && (
-                            <p className="text-sm text-muted-foreground line-clamp-2 mb-3">
-                              {previewData.description}
-                            </p>
-                          )}
-                          <a
-                            href={previewData.url}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="text-sm text-primary hover:underline flex items-center gap-1"
-                          >
-                            View Product
-                            <ExternalLink className="h-3 w-3" />
-                          </a>
-                        </div>
+                        )}
                       </div>
-                    </Card>
-                  )}
-                </div>
-              </CardContent>
-              {previewData && (
-                <CardFooter>
-                  <Button 
-                    onClick={handleAddGift}
-                    className="w-full"
-                  >
-                    <Plus className="h-4 w-4 mr-2" />
-                    Add Gift to Game
-                  </Button>
-                </CardFooter>
-              )}
-            </Card>
-
-            <Card>
-              <CardHeader>
-                <div className="flex items-center justify-between">
-                  <div>
-                    <CardTitle>Gift List</CardTitle>
-                    <CardDescription>
-                      Manage gifts for this session ({gifts.length} gifts)
-                    </CardDescription>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    {selectedGiftIds.size > 0 && (
-                      <Dialog>
-                        <DialogTrigger asChild>
-                          <Button variant="destructive" size="sm">
-                            <Trash2 className="h-4 w-4 mr-2" />
-                            Delete ({selectedGiftIds.size})
-                          </Button>
-                        </DialogTrigger>
-                        <DialogContent>
-                          <DialogHeader>
-                            <DialogTitle>Delete Selected Gifts</DialogTitle>
-                            <DialogDescription>
-                              Are you sure you want to delete {selectedGiftIds.size} selected gift(s)?
-                              This action cannot be undone.
-                            </DialogDescription>
-                          </DialogHeader>
-                          <Button
-                            onClick={handleBulkDeleteGifts}
-                            variant="destructive"
-                            className="w-full"
-                          >
-                            Delete {selectedGiftIds.size} Gift(s)
-                          </Button>
-                        </DialogContent>
-                      </Dialog>
-                    )}
-                    <div className="flex items-center gap-1 border rounded-md">
-                      <Button
-                        variant={viewMode === "grid" ? "secondary" : "ghost"}
-                        size="sm"
-                        onClick={() => setViewMode("grid")}
-                        className="rounded-r-none"
-                      >
-                        <Grid3x3 className="h-4 w-4" />
-                      </Button>
-                      <Button
-                        variant={viewMode === "list" ? "secondary" : "ghost"}
-                        size="sm"
-                        onClick={() => setViewMode("list")}
-                        className="rounded-l-none"
-                      >
-                        <List className="h-4 w-4" />
-                      </Button>
+                      <p className="text-xs text-muted-foreground">
+                        Paste a product link and the preview will load automatically
+                      </p>
                     </div>
-                  </div>
-                </div>
-              </CardHeader>
-              <CardContent>
-                <ScrollArea className="h-[400px] pr-4">
-                  {viewMode === "grid" ? (
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                      {gifts.map((gift) => (
-                        <Card key={gift.id} className="overflow-hidden">
-                          <div className="aspect-video relative bg-muted group flex items-center justify-center p-2">
+
+                    {previewData && (
+                      <Card className="overflow-hidden border-2 border-primary">
+                        <div className="flex flex-col sm:flex-row">
+                          <div className="sm:w-1/3 min-h-[200px] bg-muted relative group flex items-center justify-center p-4">
                             <img
-                              src={gift.imageUrl}
-                              alt={gift.name}
-                              className="max-w-full max-h-full object-contain"
+                              src={previewData.image}
+                              alt={previewData.title}
+                              className="max-w-full max-h-[300px] object-contain"
                               onError={(e) => {
-                                console.error('Gift image failed to load:', gift.imageUrl);
+                                console.error('Image failed to load:', previewData.image);
                                 e.currentTarget.src = 'https://images.unsplash.com/photo-1513885535751-8b9238bd345a?w=400&q=80';
                               }}
                             />
-                            <Badge
-                              className="absolute top-2 right-2"
-                              variant={
-                                gift.status === "hidden"
-                                  ? "outline"
-                                  : gift.status === "revealed"
-                                    ? "secondary"
-                                    : gift.status === "locked"
-                                      ? "default"
-                                      : "destructive"
-                              }
-                            >
-                              {gift.status}
-                            </Badge>
-                            <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                              <Dialog 
-                                open={showImageEdit && editingGiftId === gift.id} 
-                                onOpenChange={(open) => {
-                                  setShowImageEdit(open);
-                                  if (!open) setEditingGiftId(null);
-                                }}
-                              >
+                            <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
+                              <Dialog open={showImageEdit && !editingGiftId} onOpenChange={setShowImageEdit}>
                                 <DialogTrigger asChild>
                                   <Button
                                     size="sm"
                                     variant="secondary"
-                                    onClick={() => setEditingGiftId(gift.id)}
                                   >
                                     <Edit className="h-4 w-4 mr-2" />
                                     Edit Image
@@ -1842,11 +1716,376 @@ const AdminDashboard = () => {
                                   </DialogHeader>
                                   <div className="space-y-4">
                                     <div className="space-y-2">
-                                      <Label htmlFor={`imageUrl-${gift.id}`}>Image URL</Label>
+                                      <Label htmlFor="imageUrl">Image URL</Label>
                                       <Input
-                                        id={`imageUrl-${gift.id}`}
+                                        id="imageUrl"
                                         value={editingImageUrl}
                                         onChange={(e) => setEditingImageUrl(e.target.value)}
+                                        placeholder="https://example.com/image.jpg"
+                                      />
+                                      <Button 
+                                        onClick={handleUpdatePreviewImage}
+                                        disabled={!editingImageUrl}
+                                        className="w-full"
+                                      >
+                                        Update Image
+                                      </Button>
+                                    </div>
+                                    <Separator />
+                                    <div className="space-y-2">
+                                      <Label htmlFor="imageUpload">Upload Image</Label>
+                                      <Input
+                                        id="imageUpload"
+                                        type="file"
+                                        accept="image/*"
+                                        onChange={(e) => {
+                                          handleImageUpload(e, true);
+                                          setShowImageEdit(false);
+                                        }}
+                                      />
+                                    </div>
+                                  </div>
+                                </DialogContent>
+                              </Dialog>
+                            </div>
+                          </div>
+                          <div className="flex-1 p-4">
+                            <h3 className="font-semibold text-lg mb-2">
+                              {previewData.title}
+                            </h3>
+                            {previewData.description && (
+                              <p className="text-sm text-muted-foreground line-clamp-2 mb-3">
+                                {previewData.description}
+                              </p>
+                            )}
+                            <a
+                              href={previewData.url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-sm text-primary hover:underline flex items-center gap-1"
+                            >
+                              View Product
+                              <ExternalLink className="h-3 w-3" />
+                            </a>
+                          </div>
+                        </div>
+                      </Card>
+                    )}
+                  </div>
+                </CardContent>
+                {previewData && (
+                  <CardFooter>
+                    <Button 
+                      onClick={handleAddGift}
+                      className="w-full"
+                    >
+                      <Plus className="h-4 w-4 mr-2" />
+                      Add Gift to Game
+                    </Button>
+                  </CardFooter>
+                )}
+              </Card>
+
+              <Card>
+                <CardHeader>
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <CardTitle>Gift List</CardTitle>
+                      <CardDescription>
+                        Manage gifts for this session ({gifts.length} gifts)
+                      </CardDescription>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {selectedGiftIds.size > 0 && (
+                        <Dialog>
+                          <DialogTrigger asChild>
+                            <Button variant="destructive" size="sm">
+                              <Trash2 className="h-4 w-4 mr-2" />
+                              Delete ({selectedGiftIds.size})
+                            </Button>
+                          </DialogTrigger>
+                          <DialogContent>
+                            <DialogHeader>
+                              <DialogTitle>Delete Selected Gifts</DialogTitle>
+                              <DialogDescription>
+                                Are you sure you want to delete {selectedGiftIds.size} selected gift(s)?
+                                This action cannot be undone.
+                              </DialogDescription>
+                            </DialogHeader>
+                            <Button
+                              onClick={handleBulkDeleteGifts}
+                              variant="destructive"
+                              className="w-full"
+                            >
+                              Delete {selectedGiftIds.size} Gift(s)
+                            </Button>
+                          </DialogContent>
+                        </Dialog>
+                      )}
+                      <div className="flex items-center gap-1 border rounded-md">
+                        <Button
+                          variant={viewMode === "grid" ? "secondary" : "ghost"}
+                          size="sm"
+                          onClick={() => setViewMode("grid")}
+                          className="rounded-r-none"
+                        >
+                          <Grid3x3 className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          variant={viewMode === "list" ? "secondary" : "ghost"}
+                          size="sm"
+                          onClick={() => setViewMode("list")}
+                          className="rounded-l-none"
+                        >
+                          <List className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  <ScrollArea className="h-[400px] pr-4">
+                    {viewMode === "grid" ? (
+                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                        {gifts.map((gift) => (
+                          <Card key={gift.id} className="overflow-hidden">
+                            <div className="aspect-video relative bg-muted group flex items-center justify-center p-2">
+                              <img
+                                src={gift.imageUrl}
+                                alt={gift.name}
+                                className="max-w-full max-h-full object-contain"
+                                onError={(e) => {
+                                  console.error('Gift image failed to load:', gift.imageUrl);
+                                  e.currentTarget.src = 'https://images.unsplash.com/photo-1513885535751-8b9238bd345a?w=400&q=80';
+                                }}
+                              />
+                              <Badge
+                                className="absolute top-2 right-2"
+                                variant={
+                                  gift.status === "hidden"
+                                    ? "outline"
+                                    : gift.status === "revealed"
+                                      ? "secondary"
+                                      : gift.status === "locked"
+                                        ? "default"
+                                        : "destructive"
+                                }
+                              >
+                                {gift.status}
+                              </Badge>
+                              <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                                <Dialog 
+                                  open={showImageEdit && editingGiftId === gift.id} 
+                                  onOpenChange={(open) => {
+                                    setShowImageEdit(open);
+                                    if (!open) setEditingGiftId(null);
+                                  }}
+                                >
+                                  <DialogTrigger asChild>
+                                    <Button
+                                      size="sm"
+                                      variant="secondary"
+                                      onClick={() => setEditingGiftId(gift.id)}
+                                    >
+                                      <Edit className="h-4 w-4 mr-2" />
+                                      Edit Image
+                                    </Button>
+                                  </DialogTrigger>
+                                  <DialogContent>
+                                    <DialogHeader>
+                                      <DialogTitle>Update Gift Image</DialogTitle>
+                                      <DialogDescription>
+                                        Upload an image or paste an image URL
+                                      </DialogDescription>
+                                    </DialogHeader>
+                                    <div className="space-y-4">
+                                      <div className="space-y-2">
+                                        <Label htmlFor={`imageUrl-${gift.id}`}>Image URL</Label>
+                                        <Input
+                                          id={`imageUrl-${gift.id}`}
+                                          value={editingImageUrl}
+                                          onChange={(e) => setEditingImageUrl(e.target.value)}
+                                          placeholder="https://example.com/image.jpg"
+                                        />
+                                        <Button 
+                                          onClick={handleUpdateGiftImage}
+                                          disabled={!editingImageUrl}
+                                          className="w-full"
+                                        >
+                                          Update Image
+                                        </Button>
+                                      </div>
+                                      <Separator />
+                                      <div className="space-y-2">
+                                        <Label htmlFor={`imageUpload-${gift.id}`}>Upload Image</Label>
+                                        <Input
+                                          id={`imageUpload-${gift.id}`}
+                                          type="file"
+                                          accept="image/*"
+                                          onChange={(e) => {
+                                            handleImageUpload(e, false);
+                                            setShowImageEdit(false);
+                                          }}
+                                        />
+                                      </div>
+                                    </div>
+                                  </DialogContent>
+                                </Dialog>
+                              </div>
+                            </div>
+                            <CardContent className="p-4">
+                              <div className="space-y-2">
+                                <div className="flex justify-between items-start">
+                                  <h3 className="font-medium line-clamp-1">{gift.name}</h3>
+                                  <Dialog>
+                                    <DialogTrigger asChild>
+                                      <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        className="text-destructive"
+                                      >
+                                        <Trash2 className="h-4 w-4" />
+                                      </Button>
+                                    </DialogTrigger>
+                                    <DialogContent>
+                                      <DialogHeader>
+                                        <DialogTitle>Remove Gift</DialogTitle>
+                                        <DialogDescription>
+                                          Are you sure you want to remove this gift?
+                                          This action cannot be undone.
+                                        </DialogDescription>
+                                      </DialogHeader>
+                                      <Button
+                                        onClick={() => handleRemoveGift(gift.id)}
+                                        className="w-full"
+                                      >
+                                        Remove
+                                      </Button>
+                                    </DialogContent>
+                                  </Dialog>
+                                </div>
+                                {gift.link && (
+                                  <a
+                                    href={gift.link}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="text-xs text-primary hover:underline flex items-center gap-1"
+                                  >
+                                    View Product
+                                    <ExternalLink className="h-3 w-3" />
+                                  </a>
+                                )}
+                              </div>
+                            </CardContent>
+                          </Card>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="space-y-2">
+                        {gifts.length > 0 && (
+                          <div className="flex items-center gap-3 p-3 bg-muted rounded-lg border font-medium text-sm">
+                            <Checkbox
+                              checked={selectedGiftIds.size === gifts.length && gifts.length > 0}
+                              onCheckedChange={toggleSelectAll}
+                            />
+                            <div className="w-12 text-center">Image</div>
+                            <div className="flex-1">Name</div>
+                            <div className="w-24">Status</div>
+                            <div className="w-20 text-center">Actions</div>
+                          </div>
+                        )}
+                        {gifts.map((gift, index) => (
+                          <div
+                            key={gift.id}
+                            draggable
+                            onDragStart={(e) => handleDragStart(e, gift.id)}
+                            onDragOver={handleDragOver}
+                            onDrop={(e) => handleDrop(e, gift.id)}
+                            onDragEnd={handleDragEnd}
+                            className={`flex items-center gap-3 p-3 bg-card rounded-lg border hover:bg-accent/50 transition-colors cursor-move ${
+                              draggedGiftId === gift.id ? 'opacity-50' : ''
+                            }`}
+                          >
+                            <Checkbox
+                              checked={selectedGiftIds.has(gift.id)}
+                              onCheckedChange={() => toggleGiftSelection(gift.id)}
+                              onClick={(e) => e.stopPropagation()}
+                            />
+                            <GripVertical className="h-4 w-4 text-muted-foreground cursor-grab active:cursor-grabbing" />
+                            <div className="w-12 h-12 bg-muted rounded flex items-center justify-center overflow-hidden flex-shrink-0">
+                              <img
+                                src={gift.imageUrl}
+                                alt={gift.name}
+                                className="max-w-full max-h-full object-contain"
+                                onError={(e) => {
+                                  console.error('Gift image failed to load:', gift.imageUrl);
+                                  e.currentTarget.src = 'https://images.unsplash.com/photo-1513885535751-8b9238bd345a?w=400&q=80';
+                                }}
+                              />
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <h3 className="font-medium truncate">{gift.name}</h3>
+                              {gift.link && (
+                                <a
+                                  href={gift.link}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="text-xs text-primary hover:underline flex items-center gap-1"
+                                  onClick={(e) => e.stopPropagation()}
+                                >
+                                  View Product
+                                  <ExternalLink className="h-3 w-3" />
+                                </a>
+                              )}
+                            </div>
+                            <Badge
+                              className="w-24 justify-center"
+                              variant={
+                                gift.status === "hidden"
+                                  ? "outline"
+                                  : gift.status === "revealed"
+                                    ? "secondary"
+                                    : gift.status === "locked"
+                                      ? "default"
+                                      : "destructive"
+                              }
+                            >
+                              {gift.status}
+                            </Badge>
+                            <div className="flex items-center gap-1">
+                              <Dialog 
+                                open={showImageEdit && editingGiftId === gift.id} 
+                                onOpenChange={(open) => {
+                                  setShowImageEdit(open);
+                                  if (!open) setEditingGiftId(null);
+                                }}
+                              >
+                                <DialogTrigger asChild>
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setEditingGiftId(gift.id);
+                                    }}
+                                  >
+                                    <Edit className="h-4 w-4" />
+                                  </Button>
+                                </DialogTrigger>
+                                <DialogContent>
+                                  <DialogHeader>
+                                    <DialogTitle>Update Gift Image</DialogTitle>
+                                    <DialogDescription>
+                                      Upload an image or paste an image URL
+                                    </DialogDescription>
+                                  </DialogHeader>
+                                  <div className="space-y-4">
+                                    <div className="space-y-2">
+                                      <Label htmlFor={`imageUrl-list-${gift.id}`}>Image URL</Label>
+                                      <Input
+                                        id={`imageUrl-list-${gift.id}`}
+                                        value={editingImageUrl}
+                                        onChange={(e) => setEditingGiftId(e.target.value)}
                                         placeholder="https://example.com/image.jpg"
                                       />
                                       <Button 
@@ -1859,9 +2098,9 @@ const AdminDashboard = () => {
                                     </div>
                                     <Separator />
                                     <div className="space-y-2">
-                                      <Label htmlFor={`imageUpload-${gift.id}`}>Upload Image</Label>
+                                      <Label htmlFor={`imageUpload-list-${gift.id}`}>Upload Image</Label>
                                       <Input
-                                        id={`imageUpload-${gift.id}`}
+                                        id={`imageUpload-list-${gift.id}`}
                                         type="file"
                                         accept="image/*"
                                         onChange={(e) => {
@@ -1873,499 +2112,59 @@ const AdminDashboard = () => {
                                   </div>
                                 </DialogContent>
                               </Dialog>
+                              <Dialog>
+                                <DialogTrigger asChild>
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    className="text-destructive"
+                                    onClick={(e) => e.stopPropagation()}
+                                  >
+                                    <Trash2 className="h-4 w-4" />
+                                  </Button>
+                                </DialogTrigger>
+                                <DialogContent>
+                                  <DialogHeader>
+                                    <DialogTitle>Remove Gift</DialogTitle>
+                                    <DialogDescription>
+                                      Are you sure you want to remove this gift?
+                                      This action cannot be undone.
+                                    </DialogDescription>
+                                  </DialogHeader>
+                                  <Button
+                                    onClick={() => handleRemoveGift(gift.id)}
+                                    className="w-full"
+                                  >
+                                    Remove
+                                  </Button>
+                                </DialogContent>
+                              </Dialog>
                             </div>
                           </div>
-                          <CardContent className="p-4">
-                            <div className="space-y-2">
-                              <div className="flex justify-between items-start">
-                                <h3 className="font-medium line-clamp-1">{gift.name}</h3>
-                                <Dialog>
-                                  <DialogTrigger asChild>
-                                    <Button
-                                      variant="ghost"
-                                      size="sm"
-                                      className="text-destructive"
-                                    >
-                                      <Trash2 className="h-4 w-4" />
-                                    </Button>
-                                  </DialogTrigger>
-                                  <DialogContent>
-                                    <DialogHeader>
-                                      <DialogTitle>Remove Gift</DialogTitle>
-                                      <DialogDescription>
-                                        Are you sure you want to remove this gift?
-                                        This action cannot be undone.
-                                      </DialogDescription>
-                                    </DialogHeader>
-                                    <Button
-                                      onClick={() => handleRemoveGift(gift.id)}
-                                      className="w-full"
-                                    >
-                                      Remove
-                                    </Button>
-                                  </DialogContent>
-                                </Dialog>
-                              </div>
-                              {gift.link && (
-                                <a
-                                  href={gift.link}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="text-xs text-primary hover:underline flex items-center gap-1"
-                                >
-                                  View Product
-                                  <ExternalLink className="h-3 w-3" />
-                                </a>
-                              )}
-                            </div>
-                          </CardContent>
-                        </Card>
-                      ))}
-                    </div>
-                  ) : (
-                    <div className="space-y-2">
-                      {gifts.length > 0 && (
-                        <div className="flex items-center gap-3 p-3 bg-muted rounded-lg border font-medium text-sm">
-                          <Checkbox
-                            checked={selectedGiftIds.size === gifts.length && gifts.length > 0}
-                            onCheckedChange={toggleSelectAll}
-                          />
-                          <div className="w-12 text-center">Image</div>
-                          <div className="flex-1">Name</div>
-                          <div className="w-24">Status</div>
-                          <div className="w-20 text-center">Actions</div>
-                        </div>
-                      )}
-                      {gifts.map((gift, index) => (
-                        <div
-                          key={gift.id}
-                          draggable
-                          onDragStart={(e) => handleDragStart(e, gift.id)}
-                          onDragOver={handleDragOver}
-                          onDrop={(e) => handleDrop(e, gift.id)}
-                          onDragEnd={handleDragEnd}
-                          className={`flex items-center gap-3 p-3 bg-card rounded-lg border hover:bg-accent/50 transition-colors cursor-move ${
-                            draggedGiftId === gift.id ? 'opacity-50' : ''
-                          }`}
-                        >
-                          <Checkbox
-                            checked={selectedGiftIds.has(gift.id)}
-                            onCheckedChange={() => toggleGiftSelection(gift.id)}
-                            onClick={(e) => e.stopPropagation()}
-                          />
-                          <GripVertical className="h-4 w-4 text-muted-foreground cursor-grab active:cursor-grabbing" />
-                          <div className="w-12 h-12 bg-muted rounded flex items-center justify-center overflow-hidden flex-shrink-0">
-                            <img
-                              src={gift.imageUrl}
-                              alt={gift.name}
-                              className="max-w-full max-h-full object-contain"
-                              onError={(e) => {
-                                console.error('Gift image failed to load:', gift.imageUrl);
-                                e.currentTarget.src = 'https://images.unsplash.com/photo-1513885535751-8b9238bd345a?w=400&q=80';
-                              }}
-                            />
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <h3 className="font-medium truncate">{gift.name}</h3>
-                            {gift.link && (
-                              <a
-                                href={gift.link}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="text-xs text-primary hover:underline flex items-center gap-1"
-                                onClick={(e) => e.stopPropagation()}
-                              >
-                                View Product
-                                <ExternalLink className="h-3 w-3" />
-                              </a>
-                            )}
-                          </div>
-                          <Badge
-                            className="w-24 justify-center"
-                            variant={
-                              gift.status === "hidden"
-                                ? "outline"
-                                : gift.status === "revealed"
-                                  ? "secondary"
-                                  : gift.status === "locked"
-                                    ? "default"
-                                    : "destructive"
-                            }
-                          >
-                            {gift.status}
-                          </Badge>
-                          <div className="flex items-center gap-1">
-                            <Dialog 
-                              open={showImageEdit && editingGiftId === gift.id} 
-                              onOpenChange={(open) => {
-                                setShowImageEdit(open);
-                                if (!open) setEditingGiftId(null);
-                              }}
-                            >
-                              <DialogTrigger asChild>
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    setEditingGiftId(gift.id);
-                                  }}
-                                >
-                                  <Edit className="h-4 w-4" />
-                                </Button>
-                              </DialogTrigger>
-                              <DialogContent>
-                                <DialogHeader>
-                                  <DialogTitle>Update Gift Image</DialogTitle>
-                                  <DialogDescription>
-                                    Upload an image or paste an image URL
-                                  </DialogDescription>
-                                </DialogHeader>
-                                <div className="space-y-4">
-                                  <div className="space-y-2">
-                                    <Label htmlFor={`imageUrl-list-${gift.id}`}>Image URL</Label>
-                                    <Input
-                                      id={`imageUrl-list-${gift.id}`}
-                                      value={editingImageUrl}
-                                      onChange={(e) => setEditingGiftId(e.target.value)}
-                                      placeholder="https://example.com/image.jpg"
-                                    />
-                                    <Button 
-                                      onClick={handleUpdateGiftImage}
-                                      disabled={!editingImageUrl}
-                                      className="w-full"
-                                    >
-                                      Update Image
-                                    </Button>
-                                  </div>
-                                  <Separator />
-                                  <div className="space-y-2">
-                                    <Label htmlFor={`imageUpload-list-${gift.id}`}>Upload Image</Label>
-                                    <Input
-                                      id={`imageUpload-list-${gift.id}`}
-                                      type="file"
-                                      accept="image/*"
-                                      onChange={(e) => {
-                                        handleImageUpload(e, false);
-                                        setShowImageEdit(false);
-                                      }}
-                                    />
-                                  </div>
-                                </div>
-                              </DialogContent>
-                            </Dialog>
-                            <Dialog>
-                              <DialogTrigger asChild>
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  className="text-destructive"
-                                  onClick={(e) => e.stopPropagation()}
-                                >
-                                  <Trash2 className="h-4 w-4" />
-                                </Button>
-                              </DialogTrigger>
-                              <DialogContent>
-                                <DialogHeader>
-                                  <DialogTitle>Remove Gift</DialogTitle>
-                                  <DialogDescription>
-                                    Are you sure you want to remove this gift?
-                                    This action cannot be undone.
-                                  </DialogDescription>
-                                </DialogHeader>
-                                <Button
-                                  onClick={() => handleRemoveGift(gift.id)}
-                                  className="w-full"
-                                >
-                                  Remove
-                                </Button>
-                              </DialogContent>
-                            </Dialog>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </ScrollArea>
-              </CardContent>
-            </Card>
-          </TabsContent>
-
-          {/* Player Management Tab */}
-          <TabsContent value="players" className="space-y-4">
-            <Card>
-              <CardHeader>
-                <CardTitle>Player Management</CardTitle>
-                <CardDescription>
-                  Manage players in your session ({players.length} players)
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="flex justify-between items-center mb-4">
-                  <Button variant="outline">
-                    <Users className="h-4 w-4 mr-2" />
-                    Reorder Players
-                  </Button>
-                  <div className="flex gap-2">
-                    <Button variant="outline" onClick={handleShareInvite}>
-                      <Share2 className="h-4 w-4 mr-2" />
-                      Share Invite
-                    </Button>
-                  </div>
-                </div>
-
-                <ScrollArea className="h-[400px] pr-4">
-                  <div className="space-y-2">
-                    {players.map((player) => (
-                      <div
-                        key={player.id}
-                        className="flex items-center justify-between p-3 bg-card rounded-lg border"
-                      >
-                        <div className="flex items-center gap-3">
-                          <Avatar>
-                            <AvatarImage
-                              src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${player.displayName}`}
-                            />
-                            <AvatarFallback>
-                              {player.displayName.substring(0, 2).toUpperCase()}
-                            </AvatarFallback>
-                          </Avatar>
-                          <div>
-                            <div className="flex items-center gap-2">
-                              <p className="font-medium">{player.displayName}</p>
-                              {player.isAdmin && (
-                                <Badge variant="outline">Admin</Badge>
-                              )}
-                            </div>
-                            <p className="text-xs text-muted-foreground">
-                              Joined{" "}
-                              {new Date(player.joinTime).toLocaleTimeString()}
-                            </p>
-                          </div>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <Badge variant="secondary">#{player.orderIndex}</Badge>
-                          {!player.isAdmin && (
-                            <Dialog>
-                              <DialogTrigger asChild>
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  className="text-destructive"
-                                >
-                                  <Trash2 className="h-4 w-4" />
-                                </Button>
-                              </DialogTrigger>
-                              <DialogContent>
-                                <DialogHeader>
-                                  <DialogTitle>
-                                    Remove Player
-                                  </DialogTitle>
-                                  <DialogDescription>
-                                    Are you sure you want to remove this player
-                                    from the game?
-                                  </DialogDescription>
-                                </DialogHeader>
-                                <Button
-                                  onClick={() => handleRemovePlayer(player.id)}
-                                  className="w-full"
-                                >
-                                  Remove
-                                </Button>
-                              </DialogContent>
-                            </Dialog>
-                          )}
-                        </div>
+                        ))}
                       </div>
-                    ))}
-                  </div>
-                </ScrollArea>
-              </CardContent>
-            </Card>
-          </TabsContent>
-
-          {/* Game Controls Tab */}
-          <TabsContent value="controls" className="space-y-4">
-            <Card>
-              <CardHeader>
-                <CardTitle>Game Controls</CardTitle>
-                <CardDescription>
-                  Manage the flow of your White Elephant game
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <Card className="bg-muted/50">
-                    <CardHeader>
-                      <CardTitle className="text-lg">Game Status</CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                      <div className="space-y-2">
-                        <div className="flex justify-between">
-                          <span className="text-muted-foreground">Status:</span>
-                          <Badge
-                            variant={
-                              gameStatus === "setup"
-                                ? "outline"
-                                : gameStatus === "active"
-                                  ? "default"
-                                  : gameStatus === "paused"
-                                    ? "outline"
-                                    : "destructive"
-                            }
-                          >
-                            {gameStatus.charAt(0).toUpperCase() +
-                              gameStatus.slice(1)}
-                          </Badge>
-                        </div>
-                        <div className="flex justify-between">
-                          <span className="text-muted-foreground">Players:</span>
-                          <span>{players.length}</span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span className="text-muted-foreground">Gifts:</span>
-                          <span>{gifts.length}</span>
-                        </div>
-                        <Separator className="my-2" />
-                        <div className="flex justify-between">
-                          <span className="text-muted-foreground">
-                            Session Code:
-                          </span>
-                          <div className="flex items-center gap-1">
-                            <span className="font-mono font-bold">
-                              {sessionCode}
-                            </span>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={copySessionCode}
-                              className="h-6 w-6 p-0"
-                            >
-                              <Copy className="h-3 w-3" />
-                            </Button>
-                          </div>
-                        </div>
-                      </div>
-                    </CardContent>
-                  </Card>
-
-                  <Card className="bg-muted/50">
-                    <CardHeader>
-                      <CardTitle className="text-lg">Game Settings</CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                      <div className="space-y-2">
-                        <div className="flex justify-between">
-                          <span className="text-muted-foreground">
-                            Max Steals Per Gift:
-                          </span>
-                          <span>{gameConfig.maxStealsPerGift}</span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span className="text-muted-foreground">
-                            Randomize Order:
-                          </span>
-                          <span>{gameConfig.randomizeOrder ? "Yes" : "No"}</span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span className="text-muted-foreground">
-                            Allow Immediate Stealback:
-                          </span>
-                          <span>
-                            {gameConfig.allowImmediateStealback ? "Yes" : "No"}
-                          </span>
-                        </div>
-                      </div>
-                    </CardContent>
-                  </Card>
-                </div>
-
-                <div className="mt-6 space-y-4">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    {gameStatus === "setup" ? (
-                      <Button
-                        onClick={handleStartGame}
-                        className="w-full"
-                        disabled={gifts.length === 0 || players.length < 2}
-                      >
-                        <Gift className="h-4 w-4 mr-2" />
-                        Start Game
-                      </Button>
-                    ) : gameStatus === "active" ? (
-                      <Button
-                        onClick={handlePauseGame}
-                        variant="outline"
-                        className="w-full"
-                      >
-                        Pause Game
-                      </Button>
-                    ) : gameStatus === "paused" ? (
-                      <Button onClick={handleResumeGame} className="w-full">
-                        Resume Game
-                      </Button>
-                    ) : null}
-
-                    {gameStatus !== "setup" && (
-                      <Dialog>
-                        <DialogTrigger asChild>
-                          <Button variant="destructive" className="w-full">
-                            End Game
-                          </Button>
-                        </DialogTrigger>
-                        <DialogContent>
-                          <DialogHeader>
-                            <DialogTitle>End Game</DialogTitle>
-                            <DialogDescription>
-                              Are you sure you want to end the game? This will
-                              finalize all gift assignments and cannot be undone.
-                            </DialogDescription>
-                          </DialogHeader>
-                          <Button
-                            onClick={handleEndGame}
-                            className="w-full"
-                          >
-                            End Game
-                          </Button>
-                        </DialogContent>
-                      </Dialog>
                     )}
-                  </div>
+                  </ScrollArea>
+                </CardContent>
+              </Card>
+            </TabsContent>
 
-                  {gameStatus === "ended" && (
-                    <Button
-                      onClick={handleExportReport}
-                      variant="outline"
-                      className="w-full"
-                    >
-                      <Download className="h-4 w-4 mr-2" />
-                      Export Final Report
+            {/* Player Management Tab */}
+            <TabsContent value="players" className="space-y-4">
+              <Card>
+                <CardHeader>
+                  <CardTitle>Player Management</CardTitle>
+                  <CardDescription>
+                    Manage players in your session ({players.length} players)
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="flex justify-between items-center mb-4">
+                    <Button variant="outline">
+                      <Users className="h-4 w-4 mr-2" />
+                      Reorder Players
                     </Button>
-                  )}
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader>
-                <CardTitle>Advanced Settings</CardTitle>
-                <CardDescription>
-                  Additional configuration options
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-4">
-                  <div className="text-center p-6 border-2 border-dashed border-gray-300 rounded-lg">
-                    <div className="text-3xl font-bold text-primary mb-2">{sessionCode}</div>
-                    <p className="text-sm text-muted-foreground mb-4">Share this code with players</p>
-                    <div className="flex flex-col sm:flex-row gap-2 justify-center">
-                      <Button variant="outline" onClick={handleCopyLink}>
-                        <Copy className="h-4 w-4 mr-2" />
-                        Copy Link
-                      </Button>
-                      <Button variant="outline" onClick={handleGenerateQrCode}>
-                        <QrCode className="h-4 w-4 mr-2" />
-                        Show QR Code
-                      </Button>
+                    <div className="flex gap-2">
                       <Button variant="outline" onClick={handleShareInvite}>
                         <Share2 className="h-4 w-4 mr-2" />
                         Share Invite
@@ -2373,82 +2172,365 @@ const AdminDashboard = () => {
                     </div>
                   </div>
 
-                  <Dialog open={showQrCode} onOpenChange={setShowQrCode}>
-                    <DialogContent className="sm:max-w-md">
-                      <DialogHeader>
-                        <DialogTitle>QR Code Invite</DialogTitle>
-                        <DialogDescription>
-                          Players can scan this QR code to join the game
-                        </DialogDescription>
-                      </DialogHeader>
-                      <div className="flex flex-col items-center space-y-4">
-                        {qrCodeUrl && (
-                          <img 
-                            src={qrCodeUrl} 
-                            alt="QR Code for game invite" 
-                            className="border rounded-lg"
-                          />
-                        )}
-                        <div className="text-center">
-                          <p className="text-sm text-muted-foreground mb-2">Game Code:</p>
-                          <p className="text-2xl font-bold">{sessionCode}</p>
+                  <ScrollArea className="h-[400px] pr-4">
+                    <div className="space-y-2">
+                      {players.map((player) => (
+                        <div
+                          key={player.id}
+                          className="flex items-center justify-between p-3 bg-card rounded-lg border"
+                        >
+                          <div className="flex items-center gap-3">
+                            <Avatar>
+                              <AvatarImage
+                                src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${player.displayName}`}
+                              />
+                              <AvatarFallback>
+                                {player.displayName.substring(0, 2).toUpperCase()}
+                              </AvatarFallback>
+                            </Avatar>
+                            <div>
+                              <div className="flex items-center gap-2">
+                                <p className="font-medium">{player.displayName}</p>
+                                {player.isAdmin && (
+                                  <Badge variant="outline">Admin</Badge>
+                                )}
+                              </div>
+                              <p className="text-xs text-muted-foreground">
+                                Joined{" "}
+                                {new Date(player.joinTime).toLocaleTimeString()}
+                              </p>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <Badge variant="secondary">#{player.orderIndex}</Badge>
+                            {!player.isAdmin && (
+                              <Dialog>
+                                <DialogTrigger asChild>
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    className="text-destructive"
+                                  >
+                                    <Trash2 className="h-4 w-4" />
+                                  </Button>
+                                </DialogTrigger>
+                                <DialogContent>
+                                  <DialogHeader>
+                                    <DialogTitle>
+                                      Remove Player
+                                    </DialogTitle>
+                                    <DialogDescription>
+                                      Are you sure you want to remove this player
+                                      from the game?
+                                    </DialogDescription>
+                                  </DialogHeader>
+                                  <Button
+                                    onClick={() => handleRemovePlayer(player.id)}
+                                    className="w-full"
+                                  >
+                                    Remove
+                                  </Button>
+                                </DialogContent>
+                              </Dialog>
+                            )}
+                          </div>
                         </div>
-                        <Button onClick={handleCopyLink} className="w-full">
+                      ))}
+                    </div>
+                  </ScrollArea>
+                </CardContent>
+              </Card>
+            </TabsContent>
+
+            {/* Game Controls Tab */}
+            <TabsContent value="controls" className="space-y-4">
+              <Card>
+                <CardHeader>
+                  <CardTitle>Game Controls</CardTitle>
+                  <CardDescription>
+                    Manage the flow of your White Elephant game
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <Card className="bg-muted/50">
+                      <CardHeader>
+                        <CardTitle className="text-lg">Game Status</CardTitle>
+                      </CardHeader>
+                      <CardContent>
+                        <div className="space-y-2">
+                          <div className="flex justify-between">
+                            <span className="text-muted-foreground">Status:</span>
+                            <Badge
+                              variant={
+                                gameStatus === "setup"
+                                  ? "outline"
+                                  : gameStatus === "active"
+                                    ? "default"
+                                    : gameStatus === "paused"
+                                      ? "outline"
+                                      : "destructive"
+                              }
+                            >
+                              {gameStatus.charAt(0).toUpperCase() +
+                                gameStatus.slice(1)}
+                            </Badge>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-muted-foreground">Players:</span>
+                            <span>{players.length}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-muted-foreground">Gifts:</span>
+                            <span>{gifts.length}</span>
+                          </div>
+                          <Separator className="my-2" />
+                          <div className="flex justify-between">
+                            <span className="text-muted-foreground">
+                              Session Code:
+                            </span>
+                            <div className="flex items-center gap-1">
+                              <span className="font-mono font-bold">
+                                {sessionCode}
+                              </span>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={copySessionCode}
+                                className="h-6 w-6 p-0"
+                              >
+                                <Copy className="h-3 w-3" />
+                              </Button>
+                            </div>
+                          </div>
+                        </div>
+                      </CardContent>
+                    </Card>
+
+                    <Card className="bg-muted/50">
+                      <CardHeader>
+                        <CardTitle className="text-lg">Game Settings</CardTitle>
+                      </CardHeader>
+                      <CardContent>
+                        <div className="space-y-2">
+                          <div className="flex justify-between">
+                            <span className="text-muted-foreground">
+                              Max Steals Per Gift:
+                            </span>
+                            <span>{gameConfig.maxStealsPerGift}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-muted-foreground">
+                              Randomize Order:
+                            </span>
+                            <span>{gameConfig.randomizeOrder ? "Yes" : "No"}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-muted-foreground">
+                              Allow Immediate Stealback:
+                            </span>
+                            <span>
+                              {gameConfig.allowImmediateStealback ? "Yes" : "No"}
+                            </span>
+                          </div>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  </div>
+
+                  <div className="mt-6 space-y-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {gameStatus === "setup" ? (
+                        <Button
+                          onClick={handleStartGame}
+                          className="w-full"
+                          disabled={gifts.length === 0 || players.length < 2}
+                        >
+                          <Gift className="h-4 w-4 mr-2" />
+                          Start Game
+                        </Button>
+                      ) : gameStatus === "active" ? (
+                        <Button
+                          onClick={handlePauseGame}
+                          variant="outline"
+                          className="w-full"
+                        >
+                          Pause Game
+                        </Button>
+                      ) : gameStatus === "paused" ? (
+                        <Button onClick={handleResumeGame} className="w-full">
+                          Resume Game
+                        </Button>
+                      ) : null}
+
+                      {gameStatus !== "setup" && (
+                        <Dialog>
+                          <DialogTrigger asChild>
+                            <Button variant="destructive" className="w-full">
+                              End Game
+                            </Button>
+                          </DialogTrigger>
+                          <DialogContent>
+                            <DialogHeader>
+                              <DialogTitle>End Game</DialogTitle>
+                              <DialogDescription>
+                                Are you sure you want to end the game? This will
+                                finalize all gift assignments and cannot be undone.
+                              </DialogDescription>
+                            </DialogHeader>
+                            <Button
+                              onClick={handleEndGame}
+                              className="w-full"
+                            >
+                              End Game
+                            </Button>
+                          </DialogContent>
+                        </Dialog>
+                      )}
+                    </div>
+
+                    {gameStatus === "ended" && (
+                      <Button
+                        onClick={handleExportReport}
+                        variant="outline"
+                        className="w-full"
+                      >
+                        <Download className="h-4 w-4 mr-2" />
+                        Export Final Report
+                      </Button>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader>
+                  <CardTitle>Advanced Settings</CardTitle>
+                  <CardDescription>
+                    Additional configuration options
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-4">
+                    <div className="text-center p-6 border-2 border-dashed border-gray-300 rounded-lg">
+                      <div className="text-3xl font-bold text-primary mb-2">{sessionCode}</div>
+                      <p className="text-sm text-muted-foreground mb-4">Share this code with players</p>
+                      <div className="flex flex-col sm:flex-row gap-2 justify-center">
+                        <Button variant="outline" onClick={handleCopyLink}>
                           <Copy className="h-4 w-4 mr-2" />
-                          Copy Invite Link
+                          Copy Link
+                        </Button>
+                        <Button variant="outline" onClick={handleGenerateQrCode}>
+                          <QrCode className="h-4 w-4 mr-2" />
+                          Show QR Code
+                        </Button>
+                        <Button variant="outline" onClick={handleShareInvite}>
+                          <Share2 className="h-4 w-4 mr-2" />
+                          Share Invite
                         </Button>
                       </div>
-                    </DialogContent>
-                  </Dialog>
-
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="text-center">
-                      <div className="text-2xl font-bold">{players.length}</div>
-                      <div className="text-sm text-muted-foreground">Players Joined</div>
                     </div>
-                    <div className="text-center">
-                      <div className="text-2xl font-bold">{gifts.length}</div>
-                      <div className="text-sm text-muted-foreground">Gifts Added</div>
+
+                    <Dialog open={showQrCode} onOpenChange={setShowQrCode}>
+                      <DialogContent className="sm:max-w-md">
+                        <DialogHeader>
+                          <DialogTitle>QR Code Invite</DialogTitle>
+                          <DialogDescription>
+                            Players can scan this QR code to join the game
+                          </DialogDescription>
+                        </DialogHeader>
+                        <div className="flex flex-col items-center space-y-4">
+                          {qrCodeUrl && (
+                            <img 
+                              src={qrCodeUrl} 
+                              alt="QR Code for game invite" 
+                              className="border rounded-lg"
+                            />
+                          )}
+                          <div className="text-center">
+                            <p className="text-sm text-muted-foreground mb-2">Game Code:</p>
+                            <p className="text-2xl font-bold">{sessionCode}</p>
+                          </div>
+                          <Button onClick={handleCopyLink} className="w-full">
+                            <Copy className="h-4 w-4 mr-2" />
+                            Copy Invite Link
+                          </Button>
+                        </div>
+                      </DialogContent>
+                    </Dialog>
+
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="text-center">
+                        <div className="text-2xl font-bold">{players.length}</div>
+                        <div className="text-sm text-muted-foreground">Players Joined</div>
+                      </div>
+                      <div className="text-center">
+                        <div className="text-2xl font-bold">{gifts.length}</div>
+                        <div className="text-sm text-muted-foreground">Gifts Added</div>
+                      </div>
                     </div>
                   </div>
-                </div>
-              </CardContent>
-              <CardFooter>
-                <Button variant="outline">
-                  <Settings className="h-4 w-4 mr-2" />
-                  Save Settings
-                </Button>
-              </CardFooter>
-            </Card>
-          </TabsContent>
-        </Tabs>
+                </CardContent>
+                <CardFooter>
+                  <Button variant="outline">
+                    <Settings className="h-4 w-4 mr-2" />
+                    Save Settings
+                  </Button>
+                </CardFooter>
+              </Card>
+            </TabsContent>
+          </Tabs>
+        </div>
       )}
 
-      {/* QR Code Dialog */}
+      {/* QR Code Dialog - Large for Screen Sharing */}
       <Dialog open={showQrCode} onOpenChange={setShowQrCode}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="sm:max-w-2xl">
           <DialogHeader>
-            <DialogTitle>QR Code Invite</DialogTitle>
+            <DialogTitle className="text-2xl">Share with Players via Teams</DialogTitle>
             <DialogDescription>
-              Players can scan this QR code to join the game
+              Players can scan the QR code or use the link/code to join
             </DialogDescription>
           </DialogHeader>
-          <div className="flex flex-col items-center space-y-4">
+          <div className="flex flex-col items-center space-y-6 py-4">
+            {/* Large QR Code */}
             {qrCodeUrl && (
-              <img 
-                src={qrCodeUrl} 
-                alt="QR Code for game invite" 
-                className="border rounded-lg"
-              />
+              <div className="bg-white p-6 rounded-lg border-4 border-primary shadow-lg">
+                <img 
+                  src={qrCodeUrl} 
+                  alt="QR Code for game invite" 
+                  className="w-80 h-80"
+                />
+              </div>
             )}
-            <div className="text-center">
+            
+            {/* Session Code - Large Display */}
+            <div className="text-center w-full">
               <p className="text-sm text-muted-foreground mb-2">Game Code:</p>
-              <p className="text-2xl font-bold">{sessionCode}</p>
+              <div className="text-6xl font-bold text-primary tracking-wider mb-4 bg-primary/10 py-4 px-8 rounded-lg">
+                {sessionCode}
+              </div>
             </div>
-            <Button onClick={handleCopyLink} className="w-full">
-              <Copy className="h-4 w-4 mr-2" />
-              Copy Invite Link
-            </Button>
+
+            {/* Copy Link Button - Prominent */}
+            <div className="w-full space-y-3">
+              <Button 
+                onClick={() => {
+                  const inviteUrl = `${window.location.origin}/join?code=${sessionCode}`;
+                  navigator.clipboard.writeText(inviteUrl);
+                  alert('Link copied! Paste it in Teams chat.');
+                }}
+                className="w-full h-14 text-lg"
+                size="lg"
+              >
+                <Copy className="h-5 w-5 mr-2" />
+                Copy Link for Teams Chat
+              </Button>
+              
+              <div className="text-center text-sm text-muted-foreground">
+                <p>Players can join at: <span className="font-mono">{window.location.origin}/join?code={sessionCode}</span></p>
+              </div>
+            </div>
           </div>
         </DialogContent>
       </Dialog>

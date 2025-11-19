@@ -42,10 +42,11 @@ const GiftGrid = ({
     <Card className="w-full">
       <CardContent className="p-0">
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3 p-4">
-          {gifts.map((gift) => (
+          {gifts.map((gift, index) => (
             <GiftCard
               key={gift.id}
               gift={gift}
+              giftNumber={index + 1}
               onClick={() => handleGiftClick(gift)}
               isSelectable={isPlayerTurn}
             />
@@ -58,11 +59,12 @@ const GiftGrid = ({
 
 interface GiftCardProps {
   gift: GiftItem;
+  giftNumber: number;
   onClick: () => void;
   isSelectable: boolean;
 }
 
-const GiftCard = ({ gift, onClick, isSelectable }: GiftCardProps) => {
+const GiftCard = ({ gift, giftNumber, onClick, isSelectable }: GiftCardProps) => {
   const isClickable = isSelectable && gift.status !== "locked";
   
   // Generate initials from owner name
@@ -95,13 +97,28 @@ const GiftCard = ({ gift, onClick, isSelectable }: GiftCardProps) => {
       className="w-full"
     >
       <Card
-        className={`overflow-hidden ${isClickable ? "cursor-pointer" : "cursor-default"} h-full`}
+        className={`overflow-hidden ${
+          isClickable 
+            ? "cursor-pointer hover:shadow-lg hover:border-primary transition-all" 
+            : "cursor-default"
+        } h-full`}
         onClick={isClickable ? onClick : undefined}
       >
         <CardContent className="p-0 relative h-full flex flex-col">
           {gift.status === "hidden" ? (
-            <div className="bg-muted flex items-center justify-center aspect-square w-full">
-              <Gift size={32} className="text-muted-foreground" />
+            <div className="bg-gradient-to-br from-purple-100 to-pink-100 flex items-center justify-center aspect-square w-full relative overflow-hidden">
+              {/* Cover image */}
+              <img
+                src="https://images.unsplash.com/photo-1513885535751-8b9238bd345a?w=400&q=80"
+                alt="Mystery Gift"
+                className="absolute inset-0 w-full h-full object-cover opacity-40"
+              />
+              {/* Gift number */}
+              <div className="absolute top-2 left-2 bg-white/90 rounded-full w-8 h-8 flex items-center justify-center shadow-md z-10">
+                <span className="text-sm font-bold text-purple-600">{giftNumber}</span>
+              </div>
+              {/* Gift icon */}
+              <Gift size={48} className="text-purple-500 relative z-10" />
             </div>
           ) : (
             <div className="relative aspect-square w-full">
@@ -136,15 +153,15 @@ const GiftCard = ({ gift, onClick, isSelectable }: GiftCardProps) => {
             </div>
           )}
 
-          <div className="p-2 flex-grow">
+          <div className="p-3 flex-grow">
             <div className="flex flex-col gap-1">
-              <h3 className="font-medium text-xs truncate">
-                {gift.status === "hidden" ? "Mys..." : gift.name}
+              <h3 className="font-medium text-sm line-clamp-2 min-h-[2.5rem]">
+                {gift.status === "hidden" ? "Mystery Gift" : gift.name}
               </h3>
               
               <div className="flex items-center justify-between">
                 {gift.status !== "hidden" && gift.stealCount > 0 && (
-                  <Badge variant="secondary" className="text-xs px-1 py-0 h-auto">
+                  <Badge variant="secondary" className="text-xs px-1.5 py-0.5 h-auto">
                     {gift.stealCount}/2 steals
                   </Badge>
                 )}
