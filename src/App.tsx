@@ -4,6 +4,7 @@ import Home from "./components/home";
 import AdminDashboard from "./components/AdminDashboard";
 import GameBoard from "./components/GameBoard";
 import JoinGame from "./components/JoinGame";
+import { Toaster } from "@/components/ui/toaster";
 import routes from "tempo-routes";
 
 function App() {
@@ -18,6 +19,7 @@ function App() {
           <Route path="/join" element={<JoinGame />} />
         </Routes>
         {import.meta.env.VITE_TEMPO === "true" && useRoutes(routes)}
+        <Toaster />
       </>
     </Suspense>
   );

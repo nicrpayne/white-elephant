@@ -56,6 +56,7 @@ interface GameContextType {
   createSession: () => Promise<string>;
   joinSession: (sessionCode: string, displayName: string) => Promise<string>;
   addGift: (gift: Omit<Gift, 'id' | 'status' | 'stealCount' | 'currentOwnerId'>) => Promise<void>;
+  addGiftsBatch: (gifts: Omit<Gift, 'id' | 'status' | 'stealCount' | 'currentOwnerId'>[]) => Promise<void>;
   removeGift: (giftId: string) => Promise<void>;
   updateGift: (giftId: string, updates: Partial<Gift>) => Promise<void>;
   updateGameStatus: (status: GameState['gameStatus']) => Promise<void>;
@@ -218,6 +219,7 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
 
   // Load gifts
   const loadGifts = async (sessionId: string) => {
+    console.log('Loading gifts for session:', sessionId);
     const { data, error } = await supabase
       .from('gifts')
       .select(`
@@ -227,23 +229,34 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
       .eq('session_id', sessionId);
 
     if (!error && data) {
-      const gifts: Gift[] = data.map((g: any) => ({
-        id: g.id,
-        name: g.name,
-        imageUrl: g.image_url,
-        link: g.link || undefined,
-        description: g.description || undefined,
-        status: g.status,
-        stealCount: g.steal_count,
-        currentOwnerId: g.current_owner_id,
-        ownerName: g.owner?.display_name || undefined,
-      }));
+      console.log('Gifts loaded from DB:', data);
+      console.log('Number of gifts:', data.length);
+      console.log('First gift (if any):', data[0]);
+      
+      const gifts: Gift[] = data.map((g: any) => {
+        console.log('Mapping gift:', g);
+        return {
+          id: g.id,
+          name: g.name,
+          imageUrl: g.image_url,
+          link: g.link || undefined,
+          description: g.description || undefined,
+          status: g.status,
+          stealCount: g.steal_count,
+          currentOwnerId: g.current_owner_id,
+          ownerName: g.owner?.display_name || undefined,
+        };
+      });
+      console.log('Mapped gifts array:', gifts);
+      console.log('Setting gifts in state:', gifts);
       setGameState(prev => ({ ...prev, gifts }));
+    } else if (error) {
+      console.error('Error loading gifts:', error);
     }
   };
 
-  // Create a new game session
-  const createSession = async (): Promise<string> => {
+  // Create a new game session with retry logic
+  const createSession = async (retryCount = 0): Promise<string> => {
     setIsLoading(true);
     try {
       const sessionCode = generateSessionCode();
@@ -264,6 +277,14 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
 
       if (error) {
         console.error('Supabase error creating session:', error);
+        
+        // Retry up to 2 times on network errors
+        if (retryCount < 2 && (error.message?.includes('Load failed') || error.message?.includes('network'))) {
+          console.log(`Retrying session creation (attempt ${retryCount + 1}/2)...`);
+          await new Promise(resolve => setTimeout(resolve, 1000)); // Wait 1 second
+          return createSession(retryCount + 1);
+        }
+        
         throw error;
       }
       
@@ -361,7 +382,7 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
 
     console.log('Adding gift to session:', sessionId, gift);
 
-    const { error } = await supabase.from('gifts').insert({
+    const giftData = {
       session_id: sessionId,
       name: gift.name,
       image_url: gift.imageUrl,
@@ -369,16 +390,64 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
       description: gift.description || null,
       status: 'hidden',
       steal_count: 0,
-    });
+    };
+    
+    console.log('Inserting gift data:', giftData);
+
+    const { data, error } = await supabase.from('gifts').insert(giftData).select();
 
     if (error) {
       console.error('Supabase error adding gift:', error);
       throw error;
     }
     
-    console.log('Gift added successfully');
+    console.log('Gift added successfully, returned data:', data);
 
-    // Manually refresh gifts list (realtime subscription will also update)
+    // Don't reload here - let the realtime subscription handle it
+    // This prevents race conditions when adding multiple gifts
+  };
+
+  // Batch add gifts - more reliable for bulk operations
+  const addGiftsBatch = async (gifts: Omit<Gift, 'id' | 'status' | 'stealCount' | 'currentOwnerId'>[], retryCount = 0) => {
+    let sessionId = gameState.sessionId;
+    
+    if (!sessionId) {
+      console.log('No session ID, creating new session...');
+      sessionId = await createSession();
+    }
+
+    console.log('Batch adding gifts to session:', sessionId, gifts.length);
+
+    const giftsData = gifts.map(gift => ({
+      session_id: sessionId,
+      name: gift.name,
+      image_url: gift.imageUrl,
+      link: gift.link || null,
+      description: gift.description || null,
+      status: 'hidden',
+      steal_count: 0,
+    }));
+    
+    console.log('Batch inserting gift data:', giftsData);
+
+    const { data, error } = await supabase.from('gifts').insert(giftsData).select();
+
+    if (error) {
+      console.error('Supabase error batch adding gifts:', error);
+      
+      // Retry up to 2 times on network errors
+      if (retryCount < 2 && (error.message?.includes('Load failed') || error.message?.includes('network'))) {
+        console.log(`Retrying batch add (attempt ${retryCount + 1}/2)...`);
+        await new Promise(resolve => setTimeout(resolve, 1000)); // Wait 1 second
+        return addGiftsBatch(gifts, retryCount + 1);
+      }
+      
+      throw error;
+    }
+    
+    console.log('Gifts batch added successfully, count:', data?.length);
+
+    // Manually reload to ensure we have the latest data
     await loadGifts(sessionId);
   };
 
@@ -610,6 +679,7 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
         createSession,
         joinSession,
         addGift,
+        addGiftsBatch,
         removeGift,
         updateGift,
         updateGameStatus,
