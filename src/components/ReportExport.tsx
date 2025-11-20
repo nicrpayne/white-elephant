@@ -49,8 +49,14 @@ export default function ReportExport({
       })
     ];
     
+    // Properly escape CSV cells: replace quotes with double quotes and wrap in quotes
+    const escapeCsvCell = (cell: string) => {
+      // Replace any quotes with double quotes and wrap the whole cell in quotes
+      return `"${cell.replace(/"/g, '""')}"`;
+    };
+    
     const csvContent = csvRows.map(row => 
-      row.map(cell => `"${cell}"`).join(',')
+      row.map(cell => escapeCsvCell(cell)).join(',')
     ).join('\n');
     
     const blob = new Blob([csvContent], { type: 'text/csv' });
