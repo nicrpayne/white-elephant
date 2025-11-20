@@ -195,22 +195,6 @@ const GameBoard = ({ isAdmin: isAdminProp }: GameBoardProps = {}) => {
             </CardContent>
           </Card>
 
-          {/* Admin Export Button */}
-          {isAdmin && (
-            <Card>
-              <CardContent className="p-4">
-                <Button 
-                  onClick={exportResultsCSV}
-                  className="w-full"
-                  size="lg"
-                >
-                  <Download className="h-5 w-5 mr-2" />
-                  Export Results as CSV
-                </Button>
-              </CardContent>
-            </Card>
-          )}
-
           {/* Final Results */}
           <Card>
             <CardHeader>
