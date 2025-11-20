@@ -45,7 +45,7 @@ interface GameBoardProps {
   onSkipTurn?: () => void;
 }
 
-const GameBoard = () => {
+const GameBoard = ({ isAdmin: isAdminProp }: GameBoardProps = {}) => {
   const [searchParams] = useSearchParams();
   const playerId = searchParams.get("playerId");
   const { gameState, pickGift, stealGift, updateGameStatus } = useGame();
@@ -69,7 +69,8 @@ const GameBoard = () => {
   // Determine if it's this player's turn
   const isMyTurn = playerId && activePlayerId === playerId;
   const currentPlayer = players.find(p => p.id === playerId);
-  const isAdmin = currentPlayer?.isAdmin || false;
+  // Use prop if provided, otherwise check player data
+  const isAdmin = isAdminProp ?? (currentPlayer?.isAdmin || false);
   const activePlayer = players.find(p => p.id === activePlayerId);
 
   // Listen for turn changes

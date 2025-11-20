@@ -1202,7 +1202,7 @@ const AdminDashboard = () => {
         <div className="space-y-6">
           {/* Show GameBoard when game is active, paused, or ended */}
           {(gameStatus === "active" || gameStatus === "paused" || gameStatus === "ended") && (
-            <GameBoard />
+            <GameBoard isAdmin={true} />
           )}
           
           <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
