@@ -726,7 +726,7 @@ const AdminDashboard = () => {
     <div className="container mx-auto p-4 bg-background">
       <div className="flex justify-between items-center mb-6">
         <div className="flex items-center gap-3">
-          <img src="/elephant-icon.png" alt="White Elephant" className="h-10 w-10" />
+          <img src="/elephant-icon.png" alt="White Elephant" className="h-14 w-14" />
           <div>
             <h1 className="text-3xl font-bold">White Elephant Admin</h1>
             <p className="text-muted-foreground">

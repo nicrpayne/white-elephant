@@ -288,7 +288,7 @@ const GameBoard = ({ isAdmin: isAdminProp }: GameBoardProps = {}) => {
           <CardContent className="p-4 sm:p-6">
             <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 sm:gap-0 mb-4">
               <div className="flex items-center gap-3">
-                <img src="/elephant-icon.png" alt="White Elephant" className="h-8 w-8 sm:h-10 sm:w-10" />
+                <img src="/elephant-icon.png" alt="White Elephant" className="h-10 w-10 sm:h-12 sm:w-12" />
                 <div>
                   <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">
                     White Elephant Game
