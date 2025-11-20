@@ -148,6 +148,24 @@ const GiftCard = ({ gift, giftNumber, onClick, isSelectable }: GiftCardProps) =>
                 </div>
               )}
               
+              {/* Steal count badge - top right */}
+              {gift.status !== "hidden" && (
+                <div className="absolute top-2 right-2">
+                  <Badge 
+                    variant={gift.stealCount >= 2 ? "destructive" : gift.stealCount === 1 ? "default" : "secondary"}
+                    className="text-xs font-bold shadow-lg"
+                  >
+                    {gift.stealCount >= 2 ? (
+                      <span className="flex items-center gap-1">
+                        <Lock size={12} /> Locked
+                      </span>
+                    ) : (
+                      <span>{2 - gift.stealCount} steal{2 - gift.stealCount !== 1 ? 's' : ''} left</span>
+                    )}
+                  </Badge>
+                </div>
+              )}
+              
               {gift.status === "locked" && (
                 <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
                   <Lock size={24} className="text-white" />
@@ -161,14 +179,6 @@ const GiftCard = ({ gift, giftNumber, onClick, isSelectable }: GiftCardProps) =>
               <h3 className="font-medium text-sm line-clamp-2 min-h-[2.5rem]">
                 {gift.status === "hidden" ? "Mystery Gift" : gift.name}
               </h3>
-              
-              <div className="flex items-center justify-between">
-                {gift.status !== "hidden" && gift.stealCount > 0 && (
-                  <Badge variant="secondary" className="text-xs px-1.5 py-0.5 h-auto">
-                    {gift.stealCount}/2 steals
-                  </Badge>
-                )}
-              </div>
             </div>
           </div>
         </CardContent>

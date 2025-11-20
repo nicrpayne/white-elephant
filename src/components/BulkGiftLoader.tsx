@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
@@ -6,7 +6,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/components/ui/use-toast';
-import { Loader2, Upload, Check, Plus, ExternalLink } from 'lucide-react';
+import { Loader2, Upload, Check, Plus, ExternalLink, RefreshCw } from 'lucide-react';
 
 interface BulkPreview {
   url: string;
@@ -31,6 +31,7 @@ export default function BulkGiftLoader({ onAddGifts }: BulkGiftLoaderProps) {
   const [bulkPreviews, setBulkPreviews] = useState<BulkPreview[]>([]);
   const [isBulkLoading, setIsBulkLoading] = useState(false);
   const { toast } = useToast();
+  const previewSectionRef = useRef<HTMLDivElement>(null);
 
   // Auto-preview URLs as they're typed (with debounce)
   useEffect(() => {
@@ -44,6 +45,16 @@ export default function BulkGiftLoader({ onAddGifts }: BulkGiftLoaderProps) {
 
     return () => clearTimeout(timeoutId);
   }, [bulkUrls]);
+
+  // Auto-scroll to preview section when previews start loading
+  useEffect(() => {
+    if (bulkPreviews.length > 0 && previewSectionRef.current) {
+      previewSectionRef.current.scrollIntoView({ 
+        behavior: 'smooth', 
+        block: 'start' 
+      });
+    }
+  }, [bulkPreviews.length]);
 
   const fetchPreviewForUrl = async (url: string): Promise<BulkPreview> => {
     try {
@@ -246,6 +257,27 @@ export default function BulkGiftLoader({ onAddGifts }: BulkGiftLoaderProps) {
     });
   };
 
+  const retryPreview = async (index: number) => {
+    const preview = bulkPreviews[index];
+    if (!preview) return;
+
+    // Set to loading state
+    setBulkPreviews(prev => {
+      const updated = [...prev];
+      updated[index] = { ...updated[index], status: 'loading' };
+      return updated;
+    });
+
+    // Retry fetching the preview
+    const newPreview = await fetchPreviewForUrl(preview.url);
+    
+    setBulkPreviews(prev => {
+      const updated = [...prev];
+      updated[index] = newPreview;
+      return updated;
+    });
+  };
+
   const handleAddApprovedGifts = async () => {
     const approvedGifts = bulkPreviews.filter(p => p.approved && p.status === 'success');
     
@@ -317,7 +349,7 @@ export default function BulkGiftLoader({ onAddGifts }: BulkGiftLoaderProps) {
           )}
 
           {bulkPreviews.length > 0 && (
-            <div className="space-y-4 pt-4 border-t">
+            <div ref={previewSectionRef} className="space-y-4 pt-4 border-t">
               <div className="flex items-center justify-between">
                 <h4 className="font-semibold">
                   Previews ({bulkPreviews.filter(p => p.approved && p.status === 'success').length}/{bulkPreviews.length} approved)
@@ -399,9 +431,20 @@ export default function BulkGiftLoader({ onAddGifts }: BulkGiftLoaderProps) {
                                 <ExternalLink className="h-3 w-3" />
                               </a>
                               {preview.status === 'error' && (
-                                <Badge variant="destructive" className="mt-2">
-                                  Failed to load
-                                </Badge>
+                                <div className="flex items-center gap-2 mt-2">
+                                  <Badge variant="destructive">
+                                    Failed to load
+                                  </Badge>
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    onClick={() => retryPreview(index)}
+                                    className="h-6 px-2 text-xs"
+                                  >
+                                    <RefreshCw className="h-3 w-3 mr-1" />
+                                    Retry
+                                  </Button>
+                                </div>
                               )}
                             </div>
                           </>

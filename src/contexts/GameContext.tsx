@@ -146,6 +146,20 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
         },
         (payload) => {
           console.log('Game session changed:', payload);
+          const newData = payload.new as DBGameSession;
+          const oldData = payload.old as DBGameSession;
+          
+          // Check if active player changed
+          if (newData.active_player_id !== oldData.active_player_id && newData.active_player_id) {
+            // Dispatch custom event for turn change
+            window.dispatchEvent(new CustomEvent('turnChanged', { 
+              detail: { 
+                newPlayerId: newData.active_player_id,
+                oldPlayerId: oldData.active_player_id 
+              } 
+            }));
+          }
+          
           loadSession(gameState.sessionId!).catch(err => 
             console.error('Error loading session after change:', err)
           );
@@ -540,27 +554,55 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
         throw new Error('Need at least 2 players to start');
       }
 
+      console.log('Original player order:', players.map(p => ({ name: p.display_name, order: p.order_index })));
+
       // Randomize if configured
       if (gameState.gameConfig.randomizeOrder) {
+        console.log('Randomizing player order...');
         const shuffled = [...players].sort(() => Math.random() - 0.5);
+        console.log('Shuffled order:', shuffled.map(p => ({ name: p.display_name, oldOrder: p.order_index })));
+        
         for (let i = 0; i < shuffled.length; i++) {
           await supabase
             .from('players')
             .update({ order_index: i + 1 })
             .eq('id', shuffled[i].id);
         }
+        
+        // Reload players after randomization to get updated order
+        const { data: updatedPlayers } = await supabase
+          .from('players')
+          .select('*')
+          .eq('session_id', gameState.sessionId)
+          .order('order_index');
+        
+        console.log('New randomized order:', updatedPlayers?.map(p => ({ name: p.display_name, order: p.order_index })));
+        
+        if (updatedPlayers) {
+          const firstPlayer = updatedPlayers[0];
+          console.log('First player to go:', firstPlayer.display_name);
+          
+          await supabase
+            .from('game_sessions')
+            .update({
+              game_status: 'active',
+              active_player_id: firstPlayer.id,
+            })
+            .eq('id', gameState.sessionId);
+        }
+      } else {
+        // Set first player as active (no randomization)
+        const firstPlayer = players[0];
+        console.log('No randomization - first player:', firstPlayer.display_name);
+
+        await supabase
+          .from('game_sessions')
+          .update({
+            game_status: 'active',
+            active_player_id: firstPlayer.id,
+          })
+          .eq('id', gameState.sessionId);
       }
-
-      // Set first player as active
-      const firstPlayer = players.sort((a, b) => a.order_index - b.order_index)[0];
-
-      await supabase
-        .from('game_sessions')
-        .update({
-          game_status: 'active',
-          active_player_id: firstPlayer.id,
-        })
-        .eq('id', gameState.sessionId);
 
       // The real-time subscriptions will automatically update the state
     } catch (error) {
@@ -592,17 +634,47 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
         })
         .eq('id', gameState.activePlayerId);
 
-      // Move to next player
-      const currentPlayerIndex = gameState.players.findIndex(p => p.id === gameState.activePlayerId);
-      const nextPlayerIndex = (currentPlayerIndex + 1) % gameState.players.length;
-      const nextPlayer = gameState.players[nextPlayerIndex];
+      // Find next player who hasn't completed their turn
+      // Reload players to get fresh data
+      const { data: players } = await supabase
+        .from('players')
+        .select('*')
+        .eq('session_id', gameState.sessionId)
+        .order('order_index');
 
-      await supabase
-        .from('game_sessions')
-        .update({
-          active_player_id: nextPlayer.id,
-        })
-        .eq('id', gameState.sessionId);
+      if (!players) return;
+
+      // Find next player who hasn't completed their initial turn
+      const currentPlayerIndex = players.findIndex(p => p.id === gameState.activePlayerId);
+      let nextPlayerId = null;
+
+      // Look for next player who hasn't completed turn (starting from current position)
+      for (let i = 1; i <= players.length; i++) {
+        const checkIndex = (currentPlayerIndex + i) % players.length;
+        const player = players[checkIndex];
+        if (!player.has_completed_turn) {
+          nextPlayerId = player.id;
+          break;
+        }
+      }
+
+      // If all players have completed their turn, game is over
+      if (!nextPlayerId) {
+        await supabase
+          .from('game_sessions')
+          .update({
+            game_status: 'ended',
+            active_player_id: null,
+          })
+          .eq('id', gameState.sessionId);
+      } else {
+        await supabase
+          .from('game_sessions')
+          .update({
+            active_player_id: nextPlayerId,
+          })
+          .eq('id', gameState.sessionId);
+      }
     } catch (error) {
       console.error('Error picking gift:', error);
       throw error;
@@ -619,6 +691,10 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
 
       const previousOwnerId = gift.currentOwnerId;
       const newStealCount = gift.stealCount + 1;
+      
+      // Get player names for the notification
+      const stealer = gameState.players.find(p => p.id === gameState.activePlayerId);
+      const victim = gameState.players.find(p => p.id === previousOwnerId);
 
       // Update gift - assign to new owner and increment steal count
       await supabase
@@ -647,6 +723,17 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
           has_completed_turn: false,
         })
         .eq('id', previousOwnerId);
+        
+      // Dispatch steal event for notification
+      window.dispatchEvent(new CustomEvent('giftStolen', { 
+        detail: { 
+          giftName: gift.name,
+          stealerName: stealer?.displayName || 'Someone',
+          victimName: victim?.displayName || 'Someone',
+          stealsRemaining: 2 - newStealCount,
+          isLocked: newStealCount >= 2
+        } 
+      }));
 
       // Previous owner gets the next turn
       await supabase
