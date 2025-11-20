@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
@@ -7,6 +7,7 @@ import { AlertDialog, AlertDialogAction, AlertDialogContent, AlertDialogDescript
 import { Pause, Play, SkipForward, AlertCircle, Download, Trophy, PartyPopper } from "lucide-react";
 import GiftGrid from "./GiftGrid";
 import PlayerTurnPanel from "./PlayerTurnPanel";
+import ReportExport from "./ReportExport";
 import { useGame } from "@/contexts/GameContext";
 import { useSearchParams } from "react-router-dom";
 
@@ -212,56 +213,71 @@ const GameBoard = () => {
           {/* Final Results */}
           <Card>
             <CardHeader>
-              <CardTitle className="text-2xl">Final Results</CardTitle>
+              <CardTitle className="text-2xl">Final Results - Leaderboard</CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {players.map((player) => {
+              <div className="space-y-2">
+                {players.map((player, index) => {
                   const playerGift = gifts.find(g => g.currentOwnerId === player.id);
                   
                   return (
-                    <Card key={player.id} className="overflow-hidden">
-                      <CardContent className="p-4">
-                        <div className="space-y-3">
-                          {/* Player Info */}
-                          <div className="flex items-center gap-3">
-                            <div className="w-12 h-12 rounded-full bg-gradient-to-br from-purple-400 to-blue-400 flex items-center justify-center text-white font-bold text-lg">
-                              {player.displayName.charAt(0).toUpperCase()}
-                            </div>
-                            <div>
-                              <p className="font-semibold text-lg">{player.displayName}</p>
-                              <p className="text-sm text-gray-600">Order #{player.orderIndex}</p>
-                            </div>
-                          </div>
+                    <div 
+                      key={player.id} 
+                      className="flex items-center gap-4 p-4 bg-white rounded-lg border-2 border-gray-200 hover:border-purple-300 transition-colors"
+                    >
+                      {/* Rank */}
+                      <div className="flex-shrink-0 w-12 h-12 rounded-full bg-gradient-to-br from-purple-400 to-blue-400 flex items-center justify-center text-white font-bold text-xl">
+                        #{index + 1}
+                      </div>
 
-                          {/* Gift Display */}
-                          {playerGift ? (
-                            <div className="bg-gradient-to-br from-green-50 to-blue-50 rounded-lg p-3 border-2 border-green-200">
-                              <p className="text-xs text-gray-600 mb-2 font-medium">Received:</p>
-                              {playerGift.imageUrl && (
-                                <img 
-                                  src={playerGift.imageUrl} 
-                                  alt={playerGift.name}
-                                  className="w-full h-32 rounded object-cover mb-2"
-                                />
-                              )}
-                              <p className="font-medium text-sm">{playerGift.name}</p>
-                              <Badge variant="secondary" className="mt-2">
-                                Stolen {playerGift.stealCount} time{playerGift.stealCount !== 1 ? 's' : ''}
-                              </Badge>
-                            </div>
-                          ) : (
-                            <div className="bg-gray-50 rounded-lg p-4 border border-gray-200 text-center">
-                              <p className="text-sm text-gray-500">No gift received</p>
-                            </div>
-                          )}
+                      {/* Player Info */}
+                      <div className="flex-shrink-0">
+                        <div className="w-12 h-12 rounded-full bg-gradient-to-br from-green-400 to-teal-400 flex items-center justify-center text-white font-bold text-lg">
+                          {player.displayName.charAt(0).toUpperCase()}
                         </div>
-                      </CardContent>
-                    </Card>
+                      </div>
+
+                      <div className="flex-grow min-w-0">
+                        <p className="font-semibold text-lg truncate">{player.displayName}</p>
+                        <p className="text-sm text-gray-600">Order #{player.orderIndex}</p>
+                      </div>
+
+                      {/* Gift Display */}
+                      {playerGift ? (
+                        <div className="flex items-center gap-3 flex-shrink-0">
+                          {playerGift.imageUrl && (
+                            <img 
+                              src={playerGift.imageUrl} 
+                              alt={playerGift.name}
+                              className="w-16 h-16 rounded object-cover border-2 border-green-200"
+                            />
+                          )}
+                          <div className="max-w-xs">
+                            <p className="font-medium text-sm truncate">{playerGift.name}</p>
+                            <Badge variant="secondary" className="mt-1">
+                              Stolen {playerGift.stealCount}x
+                            </Badge>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="flex-shrink-0 text-sm text-gray-500 italic">
+                          No gift received
+                        </div>
+                      )}
+                    </div>
                   );
                 })}
               </div>
             </CardContent>
+            <CardFooter className="flex justify-center pt-6 border-t">
+              <ReportExport
+                players={players}
+                gifts={gifts}
+                sessionCode={sessionCode}
+                variant="default"
+                className="gap-2"
+              />
+            </CardFooter>
           </Card>
 
           {/* Session Info */}

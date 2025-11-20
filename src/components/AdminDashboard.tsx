@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "./ui/card";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
@@ -13,6 +13,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import { Checkbox } from "./ui/checkbox";
 import BulkGiftLoader from "./BulkGiftLoader";
 import GiftManagementTab from "./GiftManagementTab";
+import ReportExport from "./ReportExport";
 import { 
   Users, 
   Gift, 
@@ -111,6 +112,16 @@ const AdminDashboard = () => {
 
   // Get values from context
   const { gifts, players, gameStatus, sessionCode, gameConfig } = gameState;
+
+  // Auto-load players when in lobby status
+  useEffect(() => {
+    if (gameStatus === "lobby" && gameState.sessionId && loadPlayers) {
+      console.log('Lobby opened, loading players for session:', gameState.sessionId);
+      loadPlayers(gameState.sessionId).catch(err => {
+        console.error('Failed to load players in lobby:', err);
+      });
+    }
+  }, [gameStatus, gameState.sessionId, loadPlayers]);
 
   // Stepper configuration
   const steps = [
@@ -615,15 +626,41 @@ const AdminDashboard = () => {
 
   const handleEndGame = async () => {
     try {
-      await updateGameStatus("ended");
+      if (endGame) {
+        await endGame();
+      }
     } catch (error) {
       console.error('Error ending game:', error);
     }
   };
 
   const handleExportReport = () => {
-    // Logic to export game report
-    console.log("Exporting game report...");
+    // Export game results as CSV
+    const csvRows = [
+      ['Player Name', 'Gift Name', 'Gift Image URL', 'Order Index', 'Steal Count'],
+      ...players.map(player => {
+        const playerGift = gifts.find(g => g.currentOwnerId === player.id);
+        return [
+          player.displayName,
+          playerGift?.name || 'No gift',
+          playerGift?.imageUrl || '',
+          player.orderIndex.toString(),
+          playerGift?.stealCount?.toString() || '0'
+        ];
+      })
+    ];
+    
+    const csvContent = csvRows.map(row => 
+      row.map(cell => `"${cell}"`).join(',')
+    ).join('\n');
+    
+    const blob = new Blob([csvContent], { type: 'text/csv' });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `white-elephant-results-${sessionCode}.csv`;
+    a.click();
+    window.URL.revokeObjectURL(url);
   };
 
   const copySessionCode = () => {
@@ -1061,17 +1098,35 @@ const AdminDashboard = () => {
               <div>
                 <div className="flex items-center justify-between mb-3">
                   <h3 className="font-semibold">Players Joined ({players.length})</h3>
-                  <Button 
-                    variant="outline" 
-                    size="sm"
-                    onClick={() => {
-                      setGameStatus("setup");
-                      setCurrentStep(1);
-                    }}
-                  >
-                    <Gift className="h-4 w-4 mr-2" />
-                    Edit Gifts
-                  </Button>
+                  <div className="flex gap-2">
+                    <Button 
+                      variant="outline" 
+                      size="sm"
+                      onClick={async () => {
+                        if (gameState.sessionId && loadPlayers) {
+                          try {
+                            await loadPlayers(gameState.sessionId);
+                          } catch (err) {
+                            console.error('Failed to refresh players:', err);
+                          }
+                        }
+                      }}
+                    >
+                      <Users className="h-4 w-4 mr-2" />
+                      Refresh
+                    </Button>
+                    <Button 
+                      variant="outline" 
+                      size="sm"
+                      onClick={() => {
+                        setGameStatus("setup");
+                        setCurrentStep(1);
+                      }}
+                    >
+                      <Gift className="h-4 w-4 mr-2" />
+                      Edit Gifts
+                    </Button>
+                  </div>
                 </div>
                 <ScrollArea className="h-[300px]">
                   <div className="space-y-2">
@@ -1145,8 +1200,8 @@ const AdminDashboard = () => {
       ) : (
         // Existing tabs for active game management
         <div className="space-y-6">
-          {/* Show GameBoard when game is active or paused */}
-          {(gameStatus === "active" || gameStatus === "paused") && (
+          {/* Show GameBoard when game is active, paused, or ended */}
+          {(gameStatus === "active" || gameStatus === "paused" || gameStatus === "ended") && (
             <GameBoard />
           )}
           
@@ -1410,14 +1465,13 @@ const AdminDashboard = () => {
                     </div>
 
                     {gameStatus === "ended" && (
-                      <Button
-                        onClick={handleExportReport}
+                      <ReportExport
+                        players={players}
+                        gifts={gifts}
+                        sessionCode={sessionCode}
                         variant="outline"
                         className="w-full"
-                      >
-                        <Download className="h-4 w-4 mr-2" />
-                        Export Final Report
-                      </Button>
+                      />
                     )}
                   </div>
                 </CardContent>
