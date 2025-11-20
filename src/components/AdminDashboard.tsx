@@ -589,7 +589,7 @@ const AdminDashboard = () => {
     e.preventDefault();
     if (!draggedGiftId || draggedGiftId === targetGiftId) return;
 
-    const draggedIndex = gifts.findIndex(g => g.id === draggedGiftId);
+    const draggedIndex = gifts.findIndex(g => g.id === draggedId);
     const targetIndex = gifts.findIndex(g => g.id === targetGiftId);
 
     const newGifts = [...gifts];
@@ -725,11 +725,14 @@ const AdminDashboard = () => {
   return (
     <div className="container mx-auto p-4 bg-background">
       <div className="flex justify-between items-center mb-6">
-        <div>
-          <h1 className="text-3xl font-bold">White Elephant Admin</h1>
-          <p className="text-muted-foreground">
-            {gameStatus === "setup" ? "Set up your gift exchange" : "Manage your gift exchange session"}
-          </p>
+        <div className="flex items-center gap-3">
+          <img src="/elephant-icon.png" alt="White Elephant" className="h-10 w-10" />
+          <div>
+            <h1 className="text-3xl font-bold">White Elephant Admin</h1>
+            <p className="text-muted-foreground">
+              {gameStatus === "setup" ? "Set up your gift exchange" : "Manage your gift exchange session"}
+            </p>
+          </div>
         </div>
         <div className="flex items-center gap-4">
           <div className="flex items-center gap-2 bg-muted p-2 rounded-md">

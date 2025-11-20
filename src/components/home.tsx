@@ -23,7 +23,7 @@ const Home = () => {
       {/* Header */}
       <header className="container mx-auto py-6 flex justify-between items-center">
         <div className="flex items-center gap-2">
-          <Gift className="h-8 w-8 text-primary" />
+          <img src="/elephant-icon.png" alt="White Elephant" className="h-8 w-8" />
           <h1 className="text-2xl font-bold">White Elephant</h1>
         </div>
         <nav>
