@@ -271,15 +271,17 @@ const GameBoard = () => {
                 })}
               </div>
             </CardContent>
-            <CardFooter className="flex justify-center pt-4 sm:pt-6 border-t">
-              <ReportExport
-                players={players}
-                gifts={gifts}
-                sessionCode={sessionCode}
-                variant="default"
-                className="gap-2 w-full sm:w-auto"
-              />
-            </CardFooter>
+            {isAdmin && (
+              <CardFooter className="flex justify-center pt-4 sm:pt-6 border-t">
+                <ReportExport
+                  players={players}
+                  gifts={gifts}
+                  sessionCode={sessionCode}
+                  variant="default"
+                  className="gap-2 w-full sm:w-auto"
+                />
+              </CardFooter>
+            )}
           </Card>
 
           {/* Session Info */}
