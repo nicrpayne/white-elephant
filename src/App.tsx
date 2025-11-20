@@ -4,6 +4,7 @@ import Home from "./components/home";
 import AdminDashboard from "./components/AdminDashboard";
 import GameBoard from "./components/GameBoard";
 import JoinGame from "./components/JoinGame";
+import PresentationView from "./components/PresentationView";
 import { Toaster } from "@/components/ui/toaster";
 import routes from "tempo-routes";
 
@@ -17,6 +18,7 @@ function App() {
           <Route path="/admin/create" element={<AdminDashboard />} />
           <Route path="/game/:sessionCode" element={<GameBoard />} />
           <Route path="/join" element={<JoinGame />} />
+          <Route path="/presentation/:sessionCode" element={<PresentationView />} />
         </Routes>
         {import.meta.env.VITE_TEMPO === "true" && useRoutes(routes)}
         <Toaster />

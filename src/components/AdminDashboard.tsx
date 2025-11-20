@@ -28,6 +28,7 @@ import {
   Trash2,
   Settings,
   Plus,
+  Monitor,
   Download,
   ExternalLink,
   Loader2,
@@ -1442,28 +1443,42 @@ const AdminDashboard = () => {
                       ) : null}
 
                       {gameStatus !== "setup" && (
-                        <Dialog>
-                          <DialogTrigger asChild>
-                            <Button variant="destructive" className="w-full">
-                              End Game
-                            </Button>
-                          </DialogTrigger>
-                          <DialogContent>
-                            <DialogHeader>
-                              <DialogTitle>End Game</DialogTitle>
-                              <DialogDescription>
-                                Are you sure you want to end the game? This will
-                                finalize all gift assignments and cannot be undone.
-                              </DialogDescription>
-                            </DialogHeader>
-                            <Button
-                              onClick={handleEndGame}
-                              className="w-full"
-                            >
-                              End Game
-                            </Button>
-                          </DialogContent>
-                        </Dialog>
+                        <>
+                          <Button
+                            onClick={() => {
+                              const presentationUrl = `${window.location.origin}/presentation/${sessionCode}`;
+                              window.open(presentationUrl, '_blank', 'width=1920,height=1080');
+                            }}
+                            variant="outline"
+                            className="w-full"
+                          >
+                            <Monitor className="h-4 w-4 mr-2" />
+                            Open Presentation View
+                          </Button>
+                          
+                          <Dialog>
+                            <DialogTrigger asChild>
+                              <Button variant="destructive" className="w-full">
+                                End Game
+                              </Button>
+                            </DialogTrigger>
+                            <DialogContent>
+                              <DialogHeader>
+                                <DialogTitle>End Game</DialogTitle>
+                                <DialogDescription>
+                                  Are you sure you want to end the game? This will
+                                  finalize all gift assignments and cannot be undone.
+                                </DialogDescription>
+                              </DialogHeader>
+                              <Button
+                                onClick={handleEndGame}
+                                className="w-full"
+                              >
+                                End Game
+                              </Button>
+                            </DialogContent>
+                          </Dialog>
+                        </>
                       )}
                     </div>
 
