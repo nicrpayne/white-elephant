@@ -178,17 +178,17 @@ const GameBoard = () => {
   // If game has ended, show results screen
   if (gameStatus === "ended") {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-purple-50 to-blue-50 p-4">
-        <div className="max-w-6xl mx-auto space-y-6">
+      <div className="min-h-screen bg-gradient-to-br from-purple-50 to-blue-50 p-2 sm:p-4">
+        <div className="max-w-6xl mx-auto space-y-3 sm:space-y-4">
           {/* Header */}
           <Card className="bg-gradient-to-r from-purple-500 via-pink-500 to-orange-500 text-white">
-            <CardContent className="p-8 text-center">
-              <div className="flex items-center justify-center gap-3 mb-4">
-                <Trophy size={48} />
-                <h1 className="text-4xl font-bold">Game Over!</h1>
-                <PartyPopper size={48} />
+            <CardContent className="p-4 sm:p-8 text-center">
+              <div className="flex items-center justify-center gap-2 sm:gap-3 mb-2 sm:mb-4">
+                <Trophy className="w-8 h-8 sm:w-12 sm:h-12" />
+                <h1 className="text-2xl sm:text-4xl font-bold">Game Over!</h1>
+                <PartyPopper className="w-8 h-8 sm:w-12 sm:h-12" />
               </div>
-              <p className="text-xl text-white/90">
+              <p className="text-sm sm:text-xl text-white/90">
                 Thanks for playing White Elephant! Here's who got what:
               </p>
             </CardContent>
@@ -213,54 +213,56 @@ const GameBoard = () => {
           {/* Final Results */}
           <Card>
             <CardHeader>
-              <CardTitle className="text-2xl">Final Results - Leaderboard</CardTitle>
+              <CardTitle className="text-xl sm:text-2xl">Final Results - Leaderboard</CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="space-y-2">
+              <div className="space-y-2 sm:space-y-3">
                 {players.map((player, index) => {
                   const playerGift = gifts.find(g => g.currentOwnerId === player.id);
                   
                   return (
                     <div 
                       key={player.id} 
-                      className="flex items-center gap-4 p-4 bg-white rounded-lg border-2 border-gray-200 hover:border-purple-300 transition-colors"
+                      className="flex flex-col sm:flex-row items-start sm:items-center gap-3 sm:gap-4 p-3 sm:p-4 bg-white rounded-lg border-2 border-gray-200 hover:border-purple-300 transition-colors"
                     >
-                      {/* Rank */}
-                      <div className="flex-shrink-0 w-12 h-12 rounded-full bg-gradient-to-br from-purple-400 to-blue-400 flex items-center justify-center text-white font-bold text-xl">
-                        #{index + 1}
-                      </div>
-
-                      {/* Player Info */}
-                      <div className="flex-shrink-0">
-                        <div className="w-12 h-12 rounded-full bg-gradient-to-br from-green-400 to-teal-400 flex items-center justify-center text-white font-bold text-lg">
-                          {player.displayName.charAt(0).toUpperCase()}
+                      {/* Mobile: Rank + Player in row */}
+                      <div className="flex items-center gap-3 w-full sm:w-auto">
+                        {/* Rank */}
+                        <div className="flex-shrink-0 w-10 h-10 sm:w-12 sm:h-12 rounded-full bg-gradient-to-br from-purple-400 to-blue-400 flex items-center justify-center text-white font-bold text-lg sm:text-xl">
+                          #{index + 1}
                         </div>
-                      </div>
 
-                      <div className="flex-grow min-w-0">
-                        <p className="font-semibold text-lg truncate">{player.displayName}</p>
-                        <p className="text-sm text-gray-600">Order #{player.orderIndex}</p>
+                        {/* Player Info */}
+                        <div className="flex items-center gap-3 flex-grow min-w-0">
+                          <div className="flex-shrink-0 w-10 h-10 sm:w-12 sm:h-12 rounded-full bg-gradient-to-br from-green-400 to-teal-400 flex items-center justify-center text-white font-bold text-base sm:text-lg">
+                            {player.displayName.charAt(0).toUpperCase()}
+                          </div>
+                          <div className="flex-grow min-w-0">
+                            <p className="font-semibold text-base sm:text-lg truncate">{player.displayName}</p>
+                            <p className="text-xs sm:text-sm text-gray-600">Order #{player.orderIndex}</p>
+                          </div>
+                        </div>
                       </div>
 
                       {/* Gift Display */}
                       {playerGift ? (
-                        <div className="flex items-center gap-3 flex-shrink-0">
+                        <div className="flex items-center gap-2 sm:gap-3 w-full sm:w-auto sm:flex-shrink-0 pl-13 sm:pl-0">
                           {playerGift.imageUrl && (
                             <img 
                               src={playerGift.imageUrl} 
                               alt={playerGift.name}
-                              className="w-16 h-16 rounded object-cover border-2 border-green-200"
+                              className="w-12 h-12 sm:w-16 sm:h-16 rounded object-cover border-2 border-green-200 flex-shrink-0"
                             />
                           )}
-                          <div className="max-w-xs">
-                            <p className="font-medium text-sm truncate">{playerGift.name}</p>
-                            <Badge variant="secondary" className="mt-1">
+                          <div className="min-w-0 flex-grow sm:max-w-xs">
+                            <p className="font-medium text-xs sm:text-sm truncate">{playerGift.name}</p>
+                            <Badge variant="secondary" className="mt-1 text-xs">
                               Stolen {playerGift.stealCount}x
                             </Badge>
                           </div>
                         </div>
                       ) : (
-                        <div className="flex-shrink-0 text-sm text-gray-500 italic">
+                        <div className="text-xs sm:text-sm text-gray-500 italic pl-13 sm:pl-0 sm:flex-shrink-0">
                           No gift received
                         </div>
                       )}
@@ -269,20 +271,20 @@ const GameBoard = () => {
                 })}
               </div>
             </CardContent>
-            <CardFooter className="flex justify-center pt-6 border-t">
+            <CardFooter className="flex justify-center pt-4 sm:pt-6 border-t">
               <ReportExport
                 players={players}
                 gifts={gifts}
                 sessionCode={sessionCode}
                 variant="default"
-                className="gap-2"
+                className="gap-2 w-full sm:w-auto"
               />
             </CardFooter>
           </Card>
 
           {/* Session Info */}
           <Card>
-            <CardContent className="p-4 text-center text-sm text-gray-600">
+            <CardContent className="p-3 sm:p-4 text-center text-xs sm:text-sm text-gray-600">
               <p>Session Code: <span className="font-mono font-bold">{sessionCode}</span></p>
               <p className="mt-1">Total Players: {players.length} | Total Gifts: {gifts.length}</p>
             </CardContent>
@@ -293,20 +295,20 @@ const GameBoard = () => {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-purple-50 to-blue-50 p-4">
-      <div className="max-w-7xl mx-auto space-y-4">
+    <div className="min-h-screen bg-gradient-to-br from-purple-50 to-blue-50 p-2 sm:p-4">
+      <div className="max-w-7xl mx-auto space-y-3 sm:space-y-4">
         <Card className="border-2 shadow-lg">
-          <CardContent className="p-6">
-            <div className="flex items-center justify-between mb-4">
+          <CardContent className="p-4 sm:p-6">
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 sm:gap-0 mb-4">
               <div>
-                <h1 className="text-3xl font-bold text-gray-900">
+                <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">
                   White Elephant Game
                 </h1>
-                <p className="text-sm text-gray-600">
+                <p className="text-xs sm:text-sm text-gray-600">
                   Session Code: <span className="font-mono font-bold">{sessionCode}</span>
                 </p>
               </div>
-              <div className="flex items-center gap-3">
+              <div className="flex items-center gap-2 sm:gap-3 w-full sm:w-auto">
                 <Badge
                   variant={
                     gameStatus === "active"
@@ -315,7 +317,7 @@ const GameBoard = () => {
                         ? "secondary"
                         : "outline"
                   }
-                  className="text-sm px-3 py-1"
+                  className="text-xs sm:text-sm px-2 sm:px-3 py-1"
                 >
                   {gameStatus === "active" && "🎮 Active"}
                   {gameStatus === "paused" && "⏸️ Paused"}
@@ -323,35 +325,35 @@ const GameBoard = () => {
                   {gameStatus === "ended" && "🏁 Ended"}
                 </Badge>
                 {isAdmin && gameStatus === "active" && (
-                  <Button onClick={handlePauseGame} variant="outline" size="sm">
-                    <Pause className="h-4 w-4 mr-2" />
-                    Pause
+                  <Button onClick={handlePauseGame} variant="outline" size="sm" className="text-xs sm:text-sm">
+                    <Pause className="h-3 w-3 sm:h-4 sm:w-4 sm:mr-2" />
+                    <span className="hidden sm:inline">Pause</span>
                   </Button>
                 )}
                 {isAdmin && gameStatus === "paused" && (
-                  <Button onClick={handleResumeGame} size="sm">
-                    <Play className="h-4 w-4 mr-2" />
-                    Resume
+                  <Button onClick={handleResumeGame} size="sm" className="text-xs sm:text-sm">
+                    <Play className="h-3 w-3 sm:h-4 sm:w-4 sm:mr-2" />
+                    <span className="hidden sm:inline">Resume</span>
                   </Button>
                 )}
               </div>
             </div>
 
             {activePlayer && (
-              <div className="bg-gradient-to-r from-purple-500 via-pink-500 to-blue-500 rounded-lg p-6 mb-4 shadow-lg animate-pulse">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm text-white/90 mb-1 font-medium">🎯 Current Turn</p>
-                    <p className="text-3xl font-bold text-white drop-shadow-lg">
+              <div className="bg-gradient-to-r from-purple-500 via-pink-500 to-blue-500 rounded-lg p-3 sm:p-6 mb-3 sm:mb-4 shadow-lg animate-pulse">
+                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 sm:gap-0">
+                  <div className="flex-grow">
+                    <p className="text-xs sm:text-sm text-white/90 mb-1 font-medium">🎯 Current Turn</p>
+                    <p className="text-xl sm:text-3xl font-bold text-white drop-shadow-lg">
                       {activePlayer.displayName}
                     </p>
-                    <p className="text-sm text-white/80 mt-1">
+                    <p className="text-xs sm:text-sm text-white/80 mt-1">
                       Pick a hidden gift or steal a revealed one
                     </p>
                   </div>
-                  <div className="text-right bg-white/20 backdrop-blur-sm rounded-lg p-4">
-                    <p className="text-sm text-white/90 mb-1 font-medium">Round</p>
-                    <p className="text-4xl font-bold text-white drop-shadow-lg">{roundIndex}</p>
+                  <div className="text-left sm:text-right bg-white/20 backdrop-blur-sm rounded-lg p-3 sm:p-4 w-full sm:w-auto">
+                    <p className="text-xs sm:text-sm text-white/90 mb-1 font-medium">Round</p>
+                    <p className="text-3xl sm:text-4xl font-bold text-white drop-shadow-lg">{roundIndex}</p>
                   </div>
                 </div>
               </div>
@@ -359,13 +361,16 @@ const GameBoard = () => {
 
             <Tabs value={activeTab} onValueChange={setActiveTab}>
               <TabsList className="grid w-full grid-cols-2">
-                <TabsTrigger value="board">Game Board</TabsTrigger>
-                <TabsTrigger value="players">
+                <TabsTrigger value="board" className="text-xs sm:text-sm">
+                  <span className="hidden sm:inline">Game Board</span>
+                  <span className="sm:hidden">Board</span>
+                </TabsTrigger>
+                <TabsTrigger value="players" className="text-xs sm:text-sm">
                   Players ({players.length})
                 </TabsTrigger>
               </TabsList>
 
-              <TabsContent value="board" className="mt-4">
+              <TabsContent value="board" className="mt-3 sm:mt-4">
                 <GiftGrid 
                   gifts={gifts} 
                   onGiftSelect={handleGiftSelect}
@@ -375,8 +380,8 @@ const GameBoard = () => {
                 />
               </TabsContent>
 
-              <TabsContent value="players" className="mt-4">
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              <TabsContent value="players" className="mt-3 sm:mt-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
                   {players.map((player) => {
                     const playerGift = gifts.find(g => g.currentOwnerId === player.id);
                     
@@ -389,36 +394,36 @@ const GameBoard = () => {
                             : ""
                         }
                       >
-                        <CardContent className="p-4">
-                          <div className="space-y-3">
+                        <CardContent className="p-3 sm:p-4">
+                          <div className="space-y-2 sm:space-y-3">
                             <div className="flex items-center justify-between">
                               <div>
-                                <p className="font-semibold text-lg">
+                                <p className="font-semibold text-base sm:text-lg">
                                   {player.displayName}
                                 </p>
-                                <p className="text-sm text-gray-600">
+                                <p className="text-xs sm:text-sm text-gray-600">
                                   Order: #{player.orderIndex}
                                 </p>
                               </div>
                               {player.id === activePlayerId && (
-                                <Badge>Current Turn</Badge>
+                                <Badge className="text-xs">Current Turn</Badge>
                               )}
                             </div>
                             
                             {/* Gift Display */}
                             {playerGift ? (
-                              <div className="bg-gradient-to-br from-blue-50 to-purple-50 rounded-lg p-3 border border-blue-200">
+                              <div className="bg-gradient-to-br from-blue-50 to-purple-50 rounded-lg p-2 sm:p-3 border border-blue-200">
                                 <p className="text-xs text-gray-600 mb-1">Current Gift:</p>
                                 <div className="flex items-start gap-2">
                                   {playerGift.imageUrl && (
                                     <img 
                                       src={playerGift.imageUrl} 
                                       alt={playerGift.name}
-                                      className="w-12 h-12 rounded object-cover"
+                                      className="w-10 h-10 sm:w-12 sm:h-12 rounded object-cover flex-shrink-0"
                                     />
                                   )}
                                   <div className="flex-1 min-w-0">
-                                    <p className="font-medium text-sm truncate">
+                                    <p className="font-medium text-xs sm:text-sm truncate">
                                       {playerGift.name}
                                     </p>
                                     {playerGift.stealCount >= 2 ? (
@@ -434,7 +439,7 @@ const GameBoard = () => {
                                 </div>
                               </div>
                             ) : (
-                              <div className="bg-gray-50 rounded-lg p-3 border border-gray-200">
+                              <div className="bg-gray-50 rounded-lg p-2 sm:p-3 border border-gray-200">
                                 <p className="text-xs text-gray-500 text-center">
                                   {player.hasCompletedTurn ? "No gift" : "Waiting for turn..."}
                                 </p>
@@ -454,15 +459,15 @@ const GameBoard = () => {
 
       {/* Turn Alert Dialog */}
       <AlertDialog open={showTurnAlert} onOpenChange={setShowTurnAlert}>
-        <AlertDialogContent className="max-w-md">
+        <AlertDialogContent className="max-w-[90vw] sm:max-w-md">
           <AlertDialogHeader>
-            <AlertDialogTitle className="text-2xl">🎁 It's Your Turn!</AlertDialogTitle>
-            <AlertDialogDescription className="text-base">
+            <AlertDialogTitle className="text-xl sm:text-2xl">🎁 It's Your Turn!</AlertDialogTitle>
+            <AlertDialogDescription className="text-sm sm:text-base">
               You can now pick a hidden gift or steal a revealed gift from another player.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogAction onClick={() => setShowTurnAlert(false)}>
+            <AlertDialogAction onClick={() => setShowTurnAlert(false)} className="w-full sm:w-auto">
               Let's Go!
             </AlertDialogAction>
           </AlertDialogFooter>
@@ -471,10 +476,10 @@ const GameBoard = () => {
       
       {/* Steal Alert Dialog */}
       <AlertDialog open={showStealAlert} onOpenChange={setShowStealAlert}>
-        <AlertDialogContent className="max-w-md">
+        <AlertDialogContent className="max-w-[90vw] sm:max-w-md">
           <AlertDialogHeader>
-            <AlertDialogTitle className="text-2xl">🎯 Gift Stolen!</AlertDialogTitle>
-            <AlertDialogDescription className="text-base space-y-2">
+            <AlertDialogTitle className="text-xl sm:text-2xl">🎯 Gift Stolen!</AlertDialogTitle>
+            <AlertDialogDescription className="text-sm sm:text-base space-y-2">
               <p className="font-semibold text-foreground">
                 {stealAlertData?.stealerName} stole "{stealAlertData?.giftName}" from {stealAlertData?.victimName}!
               </p>
@@ -490,7 +495,7 @@ const GameBoard = () => {
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogAction onClick={() => setShowStealAlert(false)}>
+            <AlertDialogAction onClick={() => setShowStealAlert(false)} className="w-full sm:w-auto">
               Got it!
             </AlertDialogAction>
           </AlertDialogFooter>
