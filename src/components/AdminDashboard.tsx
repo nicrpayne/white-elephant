@@ -420,12 +420,6 @@ const AdminDashboard = () => {
   const handleAddGift = async () => {
     if (previewData) {
       try {
-        // Ensure session exists
-        if (!gameState.sessionId) {
-          console.log('Creating session before adding gift...');
-          await createSession();
-        }
-
         console.log('Calling addGiftAsync with:', previewData);
         await addGiftAsync({
           name: previewData.title,
@@ -456,11 +450,6 @@ const AdminDashboard = () => {
     if (!newGiftUrl.trim() || !previewData) return;
     
     try {
-      // Ensure session exists
-      if (!gameState.sessionId) {
-        await createSession();
-      }
-
       await addGiftAsync({
         name: previewData.title,
         imageUrl: previewData.image,

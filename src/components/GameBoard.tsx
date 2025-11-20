@@ -58,6 +58,7 @@ const GameBoard = () => {
   // Determine if it's this player's turn
   const isMyTurn = playerId && activePlayerId === playerId;
   const currentPlayer = players.find(p => p.id === playerId);
+  const isAdmin = currentPlayer?.isAdmin || false;
   const activePlayer = players.find(p => p.id === activePlayerId);
 
   const handleGiftSelect = async (giftId: string) => {
@@ -136,13 +137,13 @@ const GameBoard = () => {
                   {gameStatus === "setup" && "⚙️ Setup"}
                   {gameStatus === "ended" && "🏁 Ended"}
                 </Badge>
-                {gameStatus === "active" && (
+                {isAdmin && gameStatus === "active" && (
                   <Button onClick={handlePauseGame} variant="outline" size="sm">
                     <Pause className="h-4 w-4 mr-2" />
                     Pause
                   </Button>
                 )}
-                {gameStatus === "paused" && (
+                {isAdmin && gameStatus === "paused" && (
                   <Button onClick={handleResumeGame} size="sm">
                     <Play className="h-4 w-4 mr-2" />
                     Resume

@@ -390,6 +390,11 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
       console.error('Error removing gift:', error);
       throw error;
     }
+
+    // Manually refresh gifts list (realtime subscription will also update)
+    if (gameState.sessionId) {
+      await loadGifts(gameState.sessionId);
+    }
   };
 
   // Update gift
