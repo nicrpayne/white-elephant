@@ -31,6 +31,7 @@ interface Player {
   currentGiftId: string | null;
   isAdmin: boolean;
   hasCompletedTurn: boolean;
+  avatarSeed: string;
 }
 
 interface GameConfig {
@@ -224,6 +225,7 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
         currentGiftId: p.current_gift_id,
         isAdmin: p.is_admin,
         hasCompletedTurn: p.has_completed_turn,
+        avatarSeed: p.avatar_seed,
       }));
       setGameState(prev => ({ ...prev, players }));
     } else if (error) {
@@ -351,6 +353,9 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
         .select('*', { count: 'exact', head: true })
         .eq('session_id', session.id);
 
+      // Generate a unique avatar seed for this player
+      const avatarSeed = `${displayName}-${Date.now()}-${Math.random().toString(36).substring(7)}`;
+
       // Add player
       const { data: playerData, error: playerError } = await supabase
         .from('players')
@@ -359,6 +364,7 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
           display_name: displayName,
           order_index: (count || 0) + 1,
           is_admin: false,
+          avatar_seed: avatarSeed,
         })
         .select()
         .single();

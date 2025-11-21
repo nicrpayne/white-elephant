@@ -63,6 +63,7 @@ interface Player {
   isAdmin: boolean;
   orderIndex: number;
   eliminated: boolean;
+  avatarSeed?: string;
 }
 
 interface GameConfig {
@@ -1149,7 +1150,7 @@ const AdminDashboard = () => {
                           <div className="flex items-center gap-3">
                             <Avatar>
                               <AvatarImage
-                                src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${player.displayName}`}
+                                src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${player.avatarSeed || player.displayName}`}
                               />
                               <AvatarFallback>
                                 {player.displayName.substring(0, 2).toUpperCase()}
@@ -1261,7 +1262,7 @@ const AdminDashboard = () => {
                           <div className="flex items-center gap-3">
                             <Avatar>
                               <AvatarImage
-                                src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${player.displayName}`}
+                                src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${player.avatarSeed || player.displayName}`}
                               />
                               <AvatarFallback>
                                 {player.displayName.substring(0, 2).toUpperCase()}

@@ -176,6 +176,7 @@ export type Database = {
       }
       players: {
         Row: {
+          avatar_seed: string | null
           current_gift_id: string | null
           display_name: string
           has_completed_turn: boolean | null
@@ -186,6 +187,7 @@ export type Database = {
           session_id: string
         }
         Insert: {
+          avatar_seed?: string | null
           current_gift_id?: string | null
           display_name: string
           has_completed_turn?: boolean | null
@@ -196,6 +198,7 @@ export type Database = {
           session_id: string
         }
         Update: {
+          avatar_seed?: string | null
           current_gift_id?: string | null
           display_name?: string
           has_completed_turn?: boolean | null

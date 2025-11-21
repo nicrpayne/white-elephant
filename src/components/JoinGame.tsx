@@ -102,7 +102,7 @@ export default function JoinGame() {
               <p className="text-sm text-muted-foreground mb-2">You joined as</p>
               <div className="flex items-center justify-center gap-3 mb-4">
                 <Avatar className="h-12 w-12">
-                  <AvatarImage src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${currentPlayer?.displayName}`} />
+                  <AvatarImage src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${currentPlayer?.avatarSeed || currentPlayer?.displayName}`} />
                   <AvatarFallback>
                     {currentPlayer?.displayName?.substring(0, 2).toUpperCase()}
                   </AvatarFallback>
@@ -139,7 +139,7 @@ export default function JoinGame() {
                       <div className="flex items-center gap-3">
                         <Avatar>
                           <AvatarImage
-                            src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${player.displayName}`}
+                            src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${player.avatarSeed || player.displayName}`}
                           />
                           <AvatarFallback>
                             {player.displayName.substring(0, 2).toUpperCase()}
