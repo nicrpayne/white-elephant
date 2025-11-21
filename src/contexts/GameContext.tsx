@@ -21,6 +21,8 @@ interface Gift {
   status: "hidden" | "revealed" | "locked" | "stolen";
   stealCount: number;
   currentOwnerId: string | null;
+  ownerName?: string;
+  ownerAvatarSeed?: string;
 }
 
 interface Player {
@@ -240,7 +242,7 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
       .from('gifts')
       .select(`
         *,
-        owner:players!gifts_current_owner_id_fkey(display_name)
+        owner:players!gifts_current_owner_id_fkey(display_name, avatar_seed)
       `)
       .eq('session_id', sessionId);
 
@@ -261,6 +263,7 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
           stealCount: g.steal_count,
           currentOwnerId: g.current_owner_id,
           ownerName: g.owner?.display_name || undefined,
+          ownerAvatarSeed: g.owner?.avatar_seed || undefined,
         };
       });
       console.log('Mapped gifts array:', gifts);

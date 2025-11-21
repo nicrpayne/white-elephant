@@ -13,7 +13,7 @@ interface Player {
   orderIndex: number;
   isActive?: boolean;
   isAdmin?: boolean;
-  avatarUrl?: string;
+  avatarSeed?: string;
 }
 
 interface TurnHistoryItem {
@@ -74,7 +74,7 @@ const PlayerTurnPanel = ({
           {activePlayer ? (
             <div className="flex items-center space-x-4">
               <Avatar className="h-12 w-12 border-2 border-primary">
-                <AvatarImage src={activePlayer.avatarUrl} />
+                <AvatarImage src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${activePlayer.avatarSeed || activePlayer.displayName}`} />
                 <AvatarFallback className="bg-primary text-primary-foreground">
                   {activePlayer.displayName.substring(0, 2).toUpperCase()}
                 </AvatarFallback>
@@ -160,7 +160,7 @@ const PlayerTurnPanel = ({
                 >
                   <div className="flex items-center space-x-3 flex-1">
                     <Avatar className="h-8 w-8">
-                      <AvatarImage src={player.avatarUrl} />
+                      <AvatarImage src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${player.avatarSeed || player.displayName}`} />
                       <AvatarFallback
                         className={player.isAdmin ? "bg-amber-500" : "bg-muted"}
                       >

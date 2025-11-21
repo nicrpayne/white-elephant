@@ -3,6 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardFooter } from "@/componen
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
+import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
 import { AlertDialog, AlertDialogAction, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Pause, Play, SkipForward, AlertCircle, Download, Trophy, PartyPopper } from "lucide-react";
 import GiftGrid from "./GiftGrid";
@@ -18,6 +19,7 @@ interface Gift {
   status: "hidden" | "revealed" | "locked";
   ownerPlayerId?: string;
   ownerName?: string;
+  ownerAvatarSeed?: string;
   stealCount: number;
 }
 
@@ -28,6 +30,7 @@ interface Player {
   joinTime: Date;
   isAdmin?: boolean;
   eliminated?: boolean;
+  avatarSeed?: string;
 }
 
 interface GameBoardProps {
@@ -220,9 +223,12 @@ const GameBoard = ({ isAdmin: isAdminProp }: GameBoardProps = {}) => {
 
                         {/* Player Info */}
                         <div className="flex items-center gap-3 flex-grow min-w-0">
-                          <div className="flex-shrink-0 w-10 h-10 sm:w-12 sm:h-12 rounded-full bg-gradient-to-br from-green-400 to-teal-400 flex items-center justify-center text-white font-bold text-base sm:text-lg">
-                            {player.displayName.charAt(0).toUpperCase()}
-                          </div>
+                          <Avatar className="h-10 w-10 sm:h-12 sm:w-12 flex-shrink-0">
+                            <AvatarImage src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${player.avatarSeed || player.displayName}`} />
+                            <AvatarFallback className="bg-gradient-to-br from-green-400 to-teal-400 text-white font-bold text-base sm:text-lg">
+                              {player.displayName.charAt(0).toUpperCase()}
+                            </AvatarFallback>
+                          </Avatar>
                           <div className="flex-grow min-w-0">
                             <p className="font-semibold text-base sm:text-lg truncate">{player.displayName}</p>
                             <p className="text-xs sm:text-sm text-gray-600">Order #{player.orderIndex}</p>
@@ -237,7 +243,7 @@ const GameBoard = ({ isAdmin: isAdminProp }: GameBoardProps = {}) => {
                             <img 
                               src={playerGift.imageUrl} 
                               alt={playerGift.name}
-                              className="w-12 h-12 sm:w-16 sm:h-16 rounded object-cover border-2 border-green-200 flex-shrink-0"
+                              className="w-12 h-12 sm:w-16 sm:h-16 rounded object-contain border-2 border-green-200 flex-shrink-0"
                             />
                           )}
                           <div className="min-w-0 flex-grow sm:max-w-xs">
@@ -388,13 +394,21 @@ const GameBoard = ({ isAdmin: isAdminProp }: GameBoardProps = {}) => {
                         <CardContent className="p-3 sm:p-4">
                           <div className="space-y-2 sm:space-y-3">
                             <div className="flex items-center justify-between">
-                              <div>
-                                <p className="font-semibold text-base sm:text-lg">
-                                  {player.displayName}
-                                </p>
-                                <p className="text-xs sm:text-sm text-gray-600">
-                                  Order: #{player.orderIndex}
-                                </p>
+                              <div className="flex items-center gap-3">
+                                <Avatar className="h-10 w-10 sm:h-12 sm:w-12">
+                                  <AvatarImage src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${player.avatarSeed || player.displayName}`} />
+                                  <AvatarFallback className="bg-gradient-to-br from-green-400 to-teal-400 text-white font-bold">
+                                    {player.displayName.charAt(0).toUpperCase()}
+                                  </AvatarFallback>
+                                </Avatar>
+                                <div>
+                                  <p className="font-semibold text-base sm:text-lg">
+                                    {player.displayName}
+                                  </p>
+                                  <p className="text-xs sm:text-sm text-gray-600">
+                                    Order: #{player.orderIndex}
+                                  </p>
+                                </div>
                               </div>
                               {player.id === activePlayerId && (
                                 <Badge className="text-xs">Current Turn</Badge>
@@ -410,7 +424,7 @@ const GameBoard = ({ isAdmin: isAdminProp }: GameBoardProps = {}) => {
                                     <img 
                                       src={playerGift.imageUrl} 
                                       alt={playerGift.name}
-                                      className="w-10 h-10 sm:w-12 sm:h-12 rounded object-cover flex-shrink-0"
+                                      className="w-10 h-10 sm:w-12 sm:h-12 rounded object-contain flex-shrink-0"
                                     />
                                   )}
                                   <div className="flex-1 min-w-0">

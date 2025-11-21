@@ -3,7 +3,7 @@ import { useParams } from 'react-router-dom';
 import { supabase } from '@/lib/supabase';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Avatar, AvatarFallback } from '@/components/ui/avatar';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Gift, User } from 'lucide-react';
 
 interface Gift {
@@ -21,6 +21,7 @@ interface Player {
   display_name: string;
   order_index: number;
   has_completed_turn: boolean;
+  avatar_seed: string;
 }
 
 interface Session {
@@ -331,7 +332,7 @@ export default function PresentationView() {
                   <img
                     src={gift.image_url}
                     alt={gift.name}
-                    className="w-full h-full object-cover"
+                    className="w-full h-full object-contain"
                   />
                 )}
                 
@@ -347,6 +348,9 @@ export default function PresentationView() {
                   <div className="absolute bottom-1 left-1 right-1">
                     <div className={`${getAvatarColor(owner.display_name)} text-white px-2 py-1 rounded-full shadow-lg flex items-center gap-1.5`}>
                       <Avatar className="h-4 w-4 border border-white/50">
+                        <AvatarImage 
+                          src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${owner.avatar_seed || owner.display_name}`}
+                        />
                         <AvatarFallback className="text-white text-[8px] font-medium bg-white/20">
                           {getInitials(owner.display_name)}
                         </AvatarFallback>

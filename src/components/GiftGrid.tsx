@@ -1,7 +1,7 @@
 import React from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { motion } from "framer-motion";
 import { Lock, Gift, User } from "lucide-react";
 
@@ -14,6 +14,7 @@ interface GiftItem {
   status: GiftStatus;
   ownerPlayerId?: string;
   ownerName?: string;
+  ownerAvatarSeed?: string;
   stealCount: number;
 }
 
@@ -139,6 +140,9 @@ const GiftCard = ({ gift, giftNumber, onClick, isSelectable }: GiftCardProps) =>
                 <div className="absolute bottom-2 left-2 right-2">
                   <div className={`${getAvatarColor(gift.ownerName)} text-white px-3 py-1.5 rounded-full shadow-lg flex items-center gap-2`}>
                     <Avatar className="h-5 w-5 border border-white/50">
+                      <AvatarImage 
+                        src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${gift.ownerAvatarSeed || gift.ownerName}`}
+                      />
                       <AvatarFallback className="text-white text-[10px] font-medium bg-white/20">
                         {getInitials(gift.ownerName)}
                       </AvatarFallback>
