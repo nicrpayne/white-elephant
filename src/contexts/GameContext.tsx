@@ -40,6 +40,8 @@ interface GameConfig {
   maxStealsPerGift: number;
   randomizeOrder: boolean;
   allowImmediateStealback: boolean;
+  turnTimerEnabled: boolean;
+  turnTimerSeconds: number;
 }
 
 interface GameState {
@@ -94,6 +96,8 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
       maxStealsPerGift: 2,
       randomizeOrder: true,
       allowImmediateStealback: false,
+      turnTimerEnabled: false,
+      turnTimerSeconds: 60,
     },
   });
 
@@ -203,6 +207,8 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
           maxStealsPerGift: session.max_steals_per_gift,
           randomizeOrder: session.randomize_order,
           allowImmediateStealback: session.allow_immediate_stealback,
+          turnTimerEnabled: session.turn_timer_enabled ?? false,
+          turnTimerSeconds: session.turn_timer_seconds ?? 60,
         },
       }));
     }
@@ -290,6 +296,8 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
           max_steals_per_gift: gameState.gameConfig.maxStealsPerGift,
           randomize_order: gameState.gameConfig.randomizeOrder,
           allow_immediate_stealback: gameState.gameConfig.allowImmediateStealback,
+          turn_timer_enabled: gameState.gameConfig.turnTimerEnabled,
+          turn_timer_seconds: gameState.gameConfig.turnTimerSeconds,
         })
         .select()
         .single();
@@ -536,6 +544,8 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
     if (config.maxStealsPerGift !== undefined) updates.max_steals_per_gift = config.maxStealsPerGift;
     if (config.randomizeOrder !== undefined) updates.randomize_order = config.randomizeOrder;
     if (config.allowImmediateStealback !== undefined) updates.allow_immediate_stealback = config.allowImmediateStealback;
+    if (config.turnTimerEnabled !== undefined) updates.turn_timer_enabled = config.turnTimerEnabled;
+    if (config.turnTimerSeconds !== undefined) updates.turn_timer_seconds = config.turnTimerSeconds;
 
     const { error } = await supabase
       .from('game_sessions')

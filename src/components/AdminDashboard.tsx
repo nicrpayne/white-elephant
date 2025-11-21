@@ -70,6 +70,8 @@ interface GameConfig {
   maxStealsPerGift: number;
   allowImmediateStealback: boolean;
   randomizeOrder: boolean;
+  turnTimerEnabled: boolean;
+  turnTimerSeconds: number;
 }
 
 const AdminDashboard = () => {
@@ -819,9 +821,9 @@ const AdminDashboard = () => {
               <CardContent className="space-y-4">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <div className="space-y-2">
-                    <Label htmlFor="maxSteals">Maximum Steals Per Gift</Label>
+                    <Label htmlFor="max-steals">Maximum Steals Per Gift</Label>
                     <Input
-                      id="maxSteals"
+                      id="max-steals"
                       type="number"
                       value={gameConfig.maxStealsPerGift}
                       onChange={async (e) => {
@@ -840,11 +842,11 @@ const AdminDashboard = () => {
                   </div>
                   <div className="space-y-2">
                     <div className="flex items-center justify-between">
-                      <Label htmlFor="randomizeOrder">
+                      <Label htmlFor="randomize-order">
                         Randomize Player Order
                       </Label>
                       <Switch
-                        id="randomizeOrder"
+                        id="randomize-order"
                         checked={gameConfig.randomizeOrder}
                         onCheckedChange={async (checked) => {
                           setGameConfig({
@@ -863,11 +865,11 @@ const AdminDashboard = () => {
                   <div></div>
                   <div className="space-y-2">
                     <div className="flex items-center justify-between">
-                      <Label htmlFor="allowStealback">
-                        Allow Immediate Stealback
+                      <Label htmlFor="allow-stealback">
+                        Allow Immediate Steal-back
                       </Label>
                       <Switch
-                        id="allowStealback"
+                        id="allow-stealback"
                         checked={gameConfig.allowImmediateStealback}
                         onCheckedChange={async (checked) => {
                           setGameConfig({
@@ -884,6 +886,51 @@ const AdminDashboard = () => {
                       Note: Immediate stealbacks are not allowed in standard White
                       Elephant rules
                     </p>
+                  </div>
+                </div>
+                
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div></div>
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <Label htmlFor="turn-timer">Turn Timer</Label>
+                      <Switch
+                        id="turn-timer"
+                        checked={gameConfig.turnTimerEnabled}
+                        onCheckedChange={async (checked) => {
+                          setGameConfig({
+                            ...gameConfig,
+                            turnTimerEnabled: checked,
+                          });
+                          if (gameState.sessionId) {
+                            await updateGameConfigAsync({ turnTimerEnabled: checked });
+                          }
+                        }}
+                      />
+                    </div>
+                    
+                    {gameConfig.turnTimerEnabled && (
+                      <div className="flex items-center gap-2 pl-4">
+                        <Input
+                          type="number"
+                          min="10"
+                          max="300"
+                          value={gameConfig.turnTimerSeconds}
+                          onChange={async (e) => {
+                            const value = parseInt(e.target.value) || 60;
+                            setGameConfig({
+                              ...gameConfig,
+                              turnTimerSeconds: value,
+                            });
+                            if (gameState.sessionId) {
+                              await updateGameConfigAsync({ turnTimerSeconds: value });
+                            }
+                          }}
+                          className="w-20"
+                        />
+                        <span className="text-sm text-muted-foreground">seconds</span>
+                      </div>
+                    )}
                   </div>
                 </div>
               </CardContent>

@@ -5,7 +5,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
 import { AlertDialog, AlertDialogAction, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
-import { Pause, Play, SkipForward, AlertCircle, Download, Trophy, PartyPopper } from "lucide-react";
+import { Pause, Play, SkipForward, AlertCircle, Download, Gift, TreePine } from "lucide-react";
 import GiftGrid from "./GiftGrid";
 import PlayerTurnPanel from "./PlayerTurnPanel";
 import ReportExport from "./ReportExport";
@@ -189,9 +189,9 @@ const GameBoard = ({ isAdmin: isAdminProp }: GameBoardProps = {}) => {
           <Card className="bg-gradient-to-r from-purple-500 via-pink-500 to-orange-500 text-white">
             <CardContent className="p-4 sm:p-8 text-center">
               <div className="flex items-center justify-center gap-2 sm:gap-3 mb-2 sm:mb-4">
-                <Trophy className="w-8 h-8 sm:w-12 sm:h-12" />
+                <img src="/elephant-icon.png" alt="White Elephant" className="w-8 h-8 sm:w-12 sm:h-12" />
                 <h1 className="text-2xl sm:text-4xl font-bold">Game Over!</h1>
-                <PartyPopper className="w-8 h-8 sm:w-12 sm:h-12" />
+                <TreePine className="w-8 h-8 sm:w-12 sm:h-12" />
               </div>
               <p className="text-sm sm:text-xl text-white/90">
                 Thanks for playing White Elephant! Here's who got what:

@@ -84,6 +84,8 @@ export type Database = {
           randomize_order: boolean | null
           round_index: number | null
           session_code: string
+          turn_timer_enabled: boolean | null
+          turn_timer_seconds: number | null
           updated_at: string | null
         }
         Insert: {
@@ -96,6 +98,8 @@ export type Database = {
           randomize_order?: boolean | null
           round_index?: number | null
           session_code: string
+          turn_timer_enabled?: boolean | null
+          turn_timer_seconds?: number | null
           updated_at?: string | null
         }
         Update: {
@@ -108,6 +112,8 @@ export type Database = {
           randomize_order?: boolean | null
           round_index?: number | null
           session_code?: string
+          turn_timer_enabled?: boolean | null
+          turn_timer_seconds?: number | null
           updated_at?: string | null
         }
         Relationships: [
