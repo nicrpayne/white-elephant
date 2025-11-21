@@ -330,7 +330,7 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
   };
 
   // Join an existing session
-  const joinSession = async (sessionCode: string, displayName: string): Promise<string> => {
+  const joinSession = async (sessionCode: string, displayName: string, avatarSeed?: string): Promise<string> => {
     setIsLoading(true);
     try {
       // Find session by code
@@ -356,8 +356,8 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
         .select('*', { count: 'exact', head: true })
         .eq('session_id', session.id);
 
-      // Generate a unique avatar seed for this player
-      const avatarSeed = `${displayName}-${Date.now()}-${Math.random().toString(36).substring(7)}`;
+      // Generate a unique avatar seed for this player (or use provided one)
+      const finalAvatarSeed = avatarSeed || `${displayName}-${Date.now()}-${Math.random().toString(36).substring(7)}`;
 
       // Add player
       const { data: playerData, error: playerError } = await supabase
@@ -367,7 +367,7 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
           display_name: displayName,
           order_index: (count || 0) + 1,
           is_admin: false,
-          avatar_seed: avatarSeed,
+          avatar_seed: finalAvatarSeed,
         })
         .select()
         .single();

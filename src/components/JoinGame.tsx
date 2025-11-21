@@ -22,6 +22,8 @@ export default function JoinGame() {
   const [error, setError] = useState("");
   const [hasJoined, setHasJoined] = useState(false);
   const [playerId, setPlayerId] = useState<string | null>(null);
+  const [step, setStep] = useState<"info" | "avatar">("info");
+  const [selectedAvatar, setSelectedAvatar] = useState<string>("");
 
   // Pre-populate game code from URL parameter
   useEffect(() => {
@@ -30,6 +32,14 @@ export default function JoinGame() {
       setGameCode(codeFromUrl.toUpperCase());
     }
   }, [searchParams]);
+
+  // Generate random avatar options when component mounts
+  useEffect(() => {
+    if (!selectedAvatar) {
+      const randomSeed = `${Date.now()}-${Math.random().toString(36).substring(7)}`;
+      setSelectedAvatar(randomSeed);
+    }
+  }, []);
 
   // Check if game has started
   useEffect(() => {
@@ -58,17 +68,28 @@ export default function JoinGame() {
       return;
     }
 
+    // Move to avatar selection step
+    setStep("avatar");
+  };
+
+  const handleConfirmAvatar = async () => {
     setIsJoining(true);
     
     try {
-      const newPlayerId = await joinSession(gameCode.toUpperCase(), playerName.trim());
+      const newPlayerId = await joinSession(gameCode.toUpperCase(), playerName.trim(), selectedAvatar);
       setPlayerId(newPlayerId);
       setHasJoined(true);
     } catch (err: any) {
       setError(err.message || "Failed to join game. Please check the code and try again.");
+      setStep("info"); // Go back to info step on error
     } finally {
       setIsJoining(false);
     }
+  };
+
+  const generateNewAvatar = () => {
+    const randomSeed = `${Date.now()}-${Math.random().toString(36).substring(7)}`;
+    setSelectedAvatar(randomSeed);
   };
 
   const formatGameCode = (value: string) => {
@@ -204,69 +225,126 @@ export default function JoinGame() {
           <div className="mx-auto mb-4 w-16 h-16 bg-primary/10 rounded-full flex items-center justify-center">
             <GamepadIcon className="h-8 w-8 text-primary" />
           </div>
-          <CardTitle className="text-2xl">Join White Elephant Game</CardTitle>
+          <CardTitle className="text-2xl">
+            {step === "info" ? "Join White Elephant Game" : "Choose Your Avatar"}
+          </CardTitle>
           <CardDescription>
-            Enter your details to join the gift exchange
+            {step === "info" 
+              ? "Enter your details to join the gift exchange"
+              : "Pick an avatar that represents you"
+            }
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <form onSubmit={handleJoinGame} className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="gameCode">Game Code</Label>
-              <Input
-                id="gameCode"
-                type="text"
-                placeholder="ABCD1234"
-                value={gameCode}
-                onChange={handleGameCodeChange}
-                className="text-center text-lg font-mono tracking-wider"
-                maxLength={8}
-                required
-              />
-              <p className="text-xs text-muted-foreground text-center">
-                Enter the 8-character game code
-              </p>
-            </div>
+          {step === "info" ? (
+            <form onSubmit={handleJoinGame} className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="gameCode">Game Code</Label>
+                <Input
+                  id="gameCode"
+                  type="text"
+                  placeholder="ABCD1234"
+                  value={gameCode}
+                  onChange={handleGameCodeChange}
+                  className="text-center text-lg font-mono tracking-wider"
+                  maxLength={8}
+                  required
+                />
+                <p className="text-xs text-muted-foreground text-center">
+                  Enter the 8-character game code
+                </p>
+              </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="playerName">Your Name</Label>
-              <Input
-                id="playerName"
-                type="text"
-                placeholder="Enter your name"
-                value={playerName}
-                onChange={(e) => setPlayerName(e.target.value)}
-                maxLength={50}
-                required
-              />
-            </div>
+              <div className="space-y-2">
+                <Label htmlFor="playerName">Your Name</Label>
+                <Input
+                  id="playerName"
+                  type="text"
+                  placeholder="Enter your name"
+                  value={playerName}
+                  onChange={(e) => setPlayerName(e.target.value)}
+                  maxLength={50}
+                  required
+                />
+              </div>
 
-            {error && (
-              <Alert variant="destructive">
-                <AlertDescription>{error}</AlertDescription>
-              </Alert>
-            )}
-
-            <Button 
-              type="submit" 
-              className="w-full" 
-              disabled={isJoining}
-            >
-              {isJoining ? (
-                <>
-                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                  Joining Game...
-                </>
-              ) : (
-                <>
-                  <Users className="h-4 w-4 mr-2" />
-                  Join Game
-                </>
+              {error && (
+                <Alert variant="destructive">
+                  <AlertDescription>{error}</AlertDescription>
+                </Alert>
               )}
-            </Button>
-          </form>
 
-          <div className="mt-6 pt-4 border-t text-center">
+              <Button 
+                type="submit" 
+                className="w-full" 
+                disabled={isJoining}
+              >
+                <Users className="h-4 w-4 mr-2" />
+                Continue to Avatar Selection
+              </Button>
+            </form>
+          ) : (
+            <div className="space-y-6">
+              <div className="flex flex-col items-center gap-4">
+                <Avatar className="h-32 w-32 border-4 border-primary">
+                  <AvatarImage src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${selectedAvatar}`} />
+                  <AvatarFallback>
+                    {playerName.substring(0, 2).toUpperCase()}
+                  </AvatarFallback>
+                </Avatar>
+                <div className="text-center">
+                  <p className="font-semibold text-lg">{playerName}</p>
+                  <p className="text-sm text-muted-foreground">This will be your avatar</p>
+                </div>
+              </div>
+
+              <Button 
+                variant="outline" 
+                className="w-full"
+                onClick={generateNewAvatar}
+              >
+                🎲 Generate New Avatar
+              </Button>
+
+              {error && (
+                <Alert variant="destructive">
+                  <AlertDescription>{error}</AlertDescription>
+                </Alert>
+              )}
+
+              <div className="flex gap-2">
+                <Button 
+                  variant="outline" 
+                  className="flex-1"
+                  onClick={() => setStep("info")}
+                  disabled={isJoining}
+                >
+                  Back
+                </Button>
+                <Button 
+                  className="flex-1" 
+                  onClick={handleConfirmAvatar}
+                  disabled={isJoining}
+                >
+                  {isJoining ? (
+                    <>
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                      Joining...
+                    </>
+                  ) : (
+                    <>
+                      <Users className="h-4 w-4 mr-2" />
+                      Join Game
+                    </>
+                  )}
+                </Button>
+              </div>
+            </div>
+          )}
+        </CardContent>
+
+        <div className="px-6 pb-6">
+          <div className="pt-4 border-t text-center">
             <p className="text-sm text-muted-foreground mb-2">
               Don't have a game code?
             </p>
@@ -278,7 +356,7 @@ export default function JoinGame() {
               Back to Home
             </Button>
           </div>
-        </CardContent>
+        </div>
       </Card>
     </div>
   );
