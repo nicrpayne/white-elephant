@@ -118,7 +118,8 @@ const GameBoard = ({ isAdmin: isAdminProp }: GameBoardProps = {}) => {
       }
     } catch (error) {
       console.error("Error selecting gift:", error);
-      alert("Failed to select gift. Please try again.");
+      const errorMessage = error instanceof Error ? error.message : "Failed to select gift. Please try again.";
+      alert(errorMessage);
     }
   };
 

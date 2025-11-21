@@ -616,6 +616,13 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
     if (!gameState.sessionId || !gameState.activePlayerId) return;
 
     try {
+      // Check if current player has already completed their turn
+      const currentPlayer = gameState.players.find(p => p.id === gameState.activePlayerId);
+      if (currentPlayer?.hasCompletedTurn) {
+        console.log('Player has already completed their turn');
+        throw new Error('You have already picked a gift this round');
+      }
+
       // Update gift status to revealed and assign to current player
       await supabase
         .from('gifts')
@@ -686,6 +693,13 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
     if (!gameState.sessionId || !gameState.activePlayerId) return;
 
     try {
+      // Check if current player has already completed their turn
+      const currentPlayer = gameState.players.find(p => p.id === gameState.activePlayerId);
+      if (currentPlayer?.hasCompletedTurn) {
+        console.log('Player has already completed their turn');
+        throw new Error('You have already taken your turn this round');
+      }
+
       const gift = gameState.gifts.find(g => g.id === giftId);
       if (!gift || !gift.currentOwnerId) return;
 
@@ -695,6 +709,17 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
       // Get player names for the notification
       const stealer = gameState.players.find(p => p.id === gameState.activePlayerId);
       const victim = gameState.players.find(p => p.id === previousOwnerId);
+
+      // Log the steal action to game_actions table
+      await supabase
+        .from('game_actions')
+        .insert({
+          session_id: gameState.sessionId,
+          player_id: gameState.activePlayerId,
+          action_type: 'steal',
+          gift_id: giftId,
+          previous_owner_id: previousOwnerId,
+        });
 
       // Update gift - assign to new owner and increment steal count
       await supabase
