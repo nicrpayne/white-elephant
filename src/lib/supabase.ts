@@ -25,6 +25,8 @@ export interface DBGameSession {
   max_steals_per_gift: number;
   randomize_order: boolean;
   allow_immediate_stealback: boolean;
+  turn_timer_enabled: boolean;
+  turn_timer_seconds: number;
   created_at: string;
   updated_at: string;
 }

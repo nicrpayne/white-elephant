@@ -21,7 +21,7 @@ const Home = () => {
   return (
     <div className="min-h-screen bg-gradient-to-b from-background to-background/90">
       {/* Header */}
-      <header className="container mx-auto py-6 flex justify-between items-center">
+      <header className="container mx-auto px-4 py-6 flex justify-between items-center">
         <div className="flex items-center gap-2">
           <img src="/elephant-icon.png" alt="White Elephant" className="h-12 w-12" />
           <h1 className="text-2xl font-bold">White Elephant</h1>
@@ -34,7 +34,7 @@ const Home = () => {
       </header>
 
       {/* Hero Section */}
-      <section className="container mx-auto py-12 md:py-24 flex flex-col md:flex-row items-center gap-8">
+      <section className="container mx-auto px-4 py-12 md:py-20 flex flex-col md:flex-row items-center gap-8">
         <div className="flex-1 space-y-6">
           <motion.div
             initial={{ opacity: 0, y: 20 }}
@@ -58,7 +58,7 @@ const Home = () => {
             className="flex flex-col sm:flex-row gap-4 pt-4"
           >
             <Button size="lg" asChild>
-              <Link to="/create">Create a Game</Link>
+              <Link to="/admin/create">Create a Game</Link>
             </Button>
             <Button size="lg" variant="outline" asChild>
               <Link to="/join">Join a Game</Link>
@@ -80,99 +80,8 @@ const Home = () => {
         </motion.div>
       </section>
 
-      {/* Join Game Section */}
-      <section className="container mx-auto py-16 bg-card rounded-lg shadow-lg p-8 mb-16">
-        <div className="max-w-3xl mx-auto">
-          <Tabs defaultValue="join" className="w-full">
-            <TabsList className="grid w-full grid-cols-2 mb-8">
-              <TabsTrigger value="join" className="text-lg py-3">
-                <Users className="mr-2 h-5 w-5" /> Join a Game
-              </TabsTrigger>
-              <TabsTrigger value="create" className="text-lg py-3">
-                <Play className="mr-2 h-5 w-5" /> Create a Game
-              </TabsTrigger>
-            </TabsList>
-
-            <TabsContent value="join" className="space-y-6">
-              <Card>
-                <CardHeader>
-                  <CardTitle>Join an Existing Game</CardTitle>
-                  <CardDescription>
-                    Enter the game PIN provided by the host to join a White
-                    Elephant gift exchange.
-                  </CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <form className="space-y-4">
-                    <div className="space-y-2">
-                      <label htmlFor="game-pin" className="text-sm font-medium">
-                        Game PIN
-                      </label>
-                      <Input
-                        id="game-pin"
-                        placeholder="Enter 6-digit PIN"
-                        value={gamePin}
-                        onChange={(e) => setGamePin(e.target.value)}
-                        className="text-lg py-6"
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <label
-                        htmlFor="player-name"
-                        className="text-sm font-medium"
-                      >
-                        Your Name
-                      </label>
-                      <Input
-                        id="player-name"
-                        placeholder="Enter your display name"
-                        value={playerName}
-                        onChange={(e) => setPlayerName(e.target.value)}
-                        className="text-lg py-6"
-                      />
-                    </div>
-                  </form>
-                </CardContent>
-                <CardFooter>
-                  <Button size="lg" className="w-full text-lg py-6">
-                    Join Game
-                  </Button>
-                </CardFooter>
-              </Card>
-            </TabsContent>
-
-            <TabsContent value="create">
-              <Card>
-                <CardHeader>
-                  <CardTitle>Create a New Game</CardTitle>
-                  <CardDescription>
-                    Set up a new White Elephant gift exchange as the host.
-                  </CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-4">
-                    <p>As the host, you'll be able to:</p>
-                    <ul className="list-disc pl-5 space-y-2">
-                      <li>Add gifts with images and descriptions</li>
-                      <li>Set game rules and options</li>
-                      <li>Control the game flow</li>
-                      <li>Generate a final report</li>
-                    </ul>
-                  </div>
-                </CardContent>
-                <CardFooter>
-                  <Button size="lg" className="w-full text-lg py-6" asChild>
-                    <Link to="/admin/create">Create New Game</Link>
-                  </Button>
-                </CardFooter>
-              </Card>
-            </TabsContent>
-          </Tabs>
-        </div>
-      </section>
-
       {/* How It Works */}
-      <section className="container mx-auto py-16">
+      <section className="container mx-auto px-4 py-16">
         <div className="text-center mb-12">
           <h2 className="text-3xl font-bold">How It Works</h2>
           <p className="text-muted-foreground mt-2">
@@ -228,8 +137,8 @@ const Home = () => {
       </section>
 
       {/* Footer */}
-      <footer className="bg-muted/30 py-12">
-        <div className="container mx-auto">
+      <footer className="bg-muted/30 py-12 mt-12">
+        <div className="container mx-auto px-4">
           <div className="flex flex-col md:flex-row justify-between items-center">
             <div className="flex items-center gap-2 mb-4 md:mb-0">
               <Gift className="h-6 w-6 text-primary" />
