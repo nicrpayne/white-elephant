@@ -176,7 +176,7 @@ export default function PresentationView() {
             // Trigger reveal animation if gift was just revealed (but not stolen - steal has its own animation)
             if (updatedGift.status === 'revealed' && !stealAnimation) {
               setRevealedGiftId(updatedGift.id);
-              setTimeout(() => setRevealedGiftId(null), 3000);
+              setTimeout(() => setRevealedGiftId(null), 5000);
             }
           }
         }
