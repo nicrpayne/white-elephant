@@ -30,10 +30,12 @@ interface PlayerTurnPanelProps {
   turnHistory?: TurnHistoryItem[];
   gameStatus: "draft" | "lobby" | "active" | "paused" | "ended";
   isAdmin?: boolean;
+  isFinalRound?: boolean;
   onPauseGame?: () => void;
   onResumeGame?: () => void;
   onEndGame?: () => void;
   onSkipTurn?: () => void;
+  onKeepGift?: () => void;
 }
 
 const PlayerTurnPanel = ({
@@ -42,10 +44,12 @@ const PlayerTurnPanel = ({
   turnHistory = [],
   gameStatus = "lobby",
   isAdmin = false,
+  isFinalRound = false,
   onPauseGame = () => {},
   onResumeGame = () => {},
   onEndGame = () => {},
   onSkipTurn = () => {},
+  onKeepGift = () => {},
 }: PlayerTurnPanelProps) => {
   const activePlayer = players.find((player) => player.id === activePlayerId);
   const sortedPlayers = [...players].sort(

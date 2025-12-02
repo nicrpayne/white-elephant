@@ -51,7 +51,7 @@ interface GameBoardProps {
 const GameBoard = ({ isAdmin: isAdminProp }: GameBoardProps = {}) => {
   const [searchParams] = useSearchParams();
   const playerId = searchParams.get("playerId");
-  const { gameState, pickGift, stealGift, updateGameStatus } = useGame();
+  const { gameState, pickGift, stealGift, keepGift, updateGameStatus } = useGame();
   const [activeTab, setActiveTab] = useState("board");
   const [selectedGiftId, setSelectedGiftId] = useState<string | null>(null);
   const [showTurnAlert, setShowTurnAlert] = useState(false);
@@ -64,7 +64,7 @@ const GameBoard = ({ isAdmin: isAdminProp }: GameBoardProps = {}) => {
     isLocked: boolean;
   } | null>(null);
 
-  const { gifts, players, gameStatus, activePlayerId, currentPlayerId, sessionCode } = gameState;
+  const { gifts, players, gameStatus, activePlayerId, currentPlayerId, sessionCode, isFinalRound, firstPlayerId } = gameState;
 
   // Calculate round index
   const roundIndex = players.filter(p => p.hasCompletedTurn).length + 1;
@@ -336,7 +336,32 @@ const GameBoard = ({ isAdmin: isAdminProp }: GameBoardProps = {}) => {
               </div>
             </div>
 
-            {activePlayer && (
+            {/* Final Round Banner */}
+            {isFinalRound && (
+              <div className="bg-gradient-to-r from-amber-500 via-orange-500 to-red-500 rounded-lg p-3 sm:p-6 mb-3 sm:mb-4 shadow-lg border-4 border-yellow-300">
+                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 sm:gap-0">
+                  <div className="flex-grow">
+                    <p className="text-xs sm:text-sm text-white/90 mb-1 font-medium">🏆 FINAL ROUND!</p>
+                    <p className="text-xl sm:text-3xl font-bold text-white drop-shadow-lg">
+                      {activePlayer?.displayName}'s Last Chance
+                    </p>
+                    <p className="text-xs sm:text-sm text-white/80 mt-1">
+                      Steal a gift or keep your current one to end the game
+                    </p>
+                  </div>
+                  {isMyTurn && (
+                    <Button 
+                      onClick={keepGift}
+                      className="bg-green-600 hover:bg-green-700 text-white font-bold px-6 py-3 text-lg shadow-lg"
+                    >
+                      ✅ Keep My Gift
+                    </Button>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {activePlayer && !isFinalRound && (
               <div className="bg-gradient-to-r from-purple-500 via-pink-500 to-blue-500 rounded-lg p-3 sm:p-6 mb-3 sm:mb-4 shadow-lg animate-pulse">
                 <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 sm:gap-0">
                   <div className="flex-grow">
@@ -466,9 +491,14 @@ const GameBoard = ({ isAdmin: isAdminProp }: GameBoardProps = {}) => {
       <AlertDialog open={showTurnAlert} onOpenChange={setShowTurnAlert}>
         <AlertDialogContent className="max-w-[90vw] sm:max-w-md">
           <AlertDialogHeader>
-            <AlertDialogTitle className="text-xl sm:text-2xl">🎁 It's Your Turn!</AlertDialogTitle>
+            <AlertDialogTitle className="text-xl sm:text-2xl">
+              {isFinalRound ? "🏆 Final Round - Your Last Chance!" : "🎁 It's Your Turn!"}
+            </AlertDialogTitle>
             <AlertDialogDescription className="text-sm sm:text-base">
-              You can now pick a hidden gift or steal a revealed gift from another player.
+              {isFinalRound 
+                ? "You can steal a gift from another player, or keep your current gift to end the game."
+                : "You can now pick a hidden gift or steal a revealed gift from another player."
+              }
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

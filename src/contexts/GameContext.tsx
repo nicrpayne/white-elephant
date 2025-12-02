@@ -53,6 +53,8 @@ interface GameState {
   activePlayerId: string | null;
   roundIndex: number;
   gameConfig: GameConfig;
+  isFinalRound: boolean;
+  firstPlayerId: string | null;
 }
 
 interface GameContextType {
@@ -69,6 +71,7 @@ interface GameContextType {
   startGame: () => Promise<void>;
   pickGift: (giftId: string) => Promise<void>;
   stealGift: (giftId: string) => Promise<void>;
+  keepGift: () => Promise<void>;
   setGifts: (gifts: Gift[]) => void;
   setPlayers: (players: Player[]) => void;
   setGameStatus: (status: GameState['gameStatus']) => void;
@@ -99,6 +102,8 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
       turnTimerEnabled: false,
       turnTimerSeconds: 60,
     },
+    isFinalRound: false,
+    firstPlayerId: null,
   });
 
   const [isLoading, setIsLoading] = useState(false);
@@ -203,6 +208,8 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
         gameStatus: session.game_status,
         activePlayerId: session.active_player_id,
         roundIndex: session.round_index,
+        isFinalRound: session.is_final_round ?? false,
+        firstPlayerId: session.first_player_id ?? null,
         gameConfig: {
           maxStealsPerGift: session.max_steals_per_gift,
           randomizeOrder: session.randomize_order,
@@ -606,6 +613,8 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
             .update({
               game_status: 'active',
               active_player_id: firstPlayer.id,
+              first_player_id: firstPlayer.id,
+              is_final_round: false,
             })
             .eq('id', gameState.sessionId);
         }
@@ -619,6 +628,8 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
           .update({
             game_status: 'active',
             active_player_id: firstPlayer.id,
+            first_player_id: firstPlayer.id,
+            is_final_round: false,
           })
           .eq('id', gameState.sessionId);
       }
@@ -635,9 +646,9 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
     if (!gameState.sessionId || !gameState.activePlayerId) return;
 
     try {
-      // Check if current player has already completed their turn
+      // Check if current player has already completed their turn (but allow in final round)
       const currentPlayer = gameState.players.find(p => p.id === gameState.activePlayerId);
-      if (currentPlayer?.hasCompletedTurn) {
+      if (currentPlayer?.hasCompletedTurn && !gameState.isFinalRound) {
         console.log('Player has already completed their turn');
         throw new Error('You have already picked a gift this round');
       }
@@ -659,6 +670,20 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
           has_completed_turn: true,
         })
         .eq('id', gameState.activePlayerId);
+
+      // If we're in the final round and someone picks a new gift, the game ends
+      if (gameState.isFinalRound) {
+        console.log('Final round: Player picked a new gift, game ends');
+        await supabase
+          .from('game_sessions')
+          .update({
+            game_status: 'ended',
+            active_player_id: null,
+            is_final_round: false,
+          })
+          .eq('id', gameState.sessionId);
+        return;
+      }
 
       // Find next player who hasn't completed their turn
       // Reload players to get fresh data
@@ -684,15 +709,40 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
         }
       }
 
-      // If all players have completed their turn, game is over
+      // If all players have completed their turn, start the final round
+      // The first player gets one more chance to steal or keep their gift
       if (!nextPlayerId) {
-        await supabase
+        // Get the session to find the first player
+        const { data: session } = await supabase
           .from('game_sessions')
-          .update({
-            game_status: 'ended',
-            active_player_id: null,
-          })
-          .eq('id', gameState.sessionId);
+          .select('first_player_id')
+          .eq('id', gameState.sessionId)
+          .single();
+
+        if (session?.first_player_id) {
+          console.log('All players done - starting final round for first player');
+          await supabase
+            .from('game_sessions')
+            .update({
+              is_final_round: true,
+              active_player_id: session.first_player_id,
+            })
+            .eq('id', gameState.sessionId);
+          
+          // Dispatch event for final round notification
+          window.dispatchEvent(new CustomEvent('finalRoundStarted', { 
+            detail: { firstPlayerId: session.first_player_id } 
+          }));
+        } else {
+          // Fallback: end game if no first player found
+          await supabase
+            .from('game_sessions')
+            .update({
+              game_status: 'ended',
+              active_player_id: null,
+            })
+            .eq('id', gameState.sessionId);
+        }
       } else {
         await supabase
           .from('game_sessions')
@@ -712,9 +762,9 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
     if (!gameState.sessionId || !gameState.activePlayerId) return;
 
     try {
-      // Check if current player has already completed their turn
+      // Check if current player has already completed their turn (but allow in final round)
       const currentPlayer = gameState.players.find(p => p.id === gameState.activePlayerId);
-      if (currentPlayer?.hasCompletedTurn) {
+      if (currentPlayer?.hasCompletedTurn && !gameState.isFinalRound) {
         console.log('Player has already completed their turn');
         throw new Error('You have already taken your turn this round');
       }
@@ -775,11 +825,12 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
           stealerName: stealer?.displayName || 'Someone',
           victimName: victim?.displayName || 'Someone',
           stealsRemaining: 2 - newStealCount,
-          isLocked: newStealCount >= 2
+          isLocked: newStealCount >= 2,
+          isFinalRound: gameState.isFinalRound
         } 
       }));
 
-      // Previous owner gets the next turn
+      // Previous owner gets the next turn (this continues the final round chain)
       await supabase
         .from('game_sessions')
         .update({
@@ -788,6 +839,37 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
         .eq('id', gameState.sessionId);
     } catch (error) {
       console.error('Error stealing gift:', error);
+      throw error;
+    }
+  };
+
+  // Keep current gift (used in final round to end the game)
+  const keepGift = async () => {
+    if (!gameState.sessionId || !gameState.activePlayerId) return;
+
+    try {
+      // Only allow keeping gift during final round
+      if (!gameState.isFinalRound) {
+        throw new Error('Can only keep gift during final round');
+      }
+
+      console.log('Player chose to keep their gift - ending game');
+      
+      await supabase
+        .from('game_sessions')
+        .update({
+          game_status: 'ended',
+          active_player_id: null,
+          is_final_round: false,
+        })
+        .eq('id', gameState.sessionId);
+
+      // Dispatch event for game ended
+      window.dispatchEvent(new CustomEvent('gameEnded', { 
+        detail: { reason: 'playerKeptGift' } 
+      }));
+    } catch (error) {
+      console.error('Error keeping gift:', error);
       throw error;
     }
   };
@@ -818,6 +900,7 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
         startGame,
         pickGift,
         stealGift,
+        keepGift,
         setGifts,
         setPlayers,
         setGameStatus,

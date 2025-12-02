@@ -27,6 +27,8 @@ interface Player {
 interface Session {
   game_status: string;
   active_player_id: string | null;
+  is_final_round: boolean | null;
+  first_player_id: string | null;
 }
 
 interface StealAnimation {
@@ -272,7 +274,12 @@ export default function PresentationView() {
             {sessionCode}
           </Badge>
         </div>
-        {session?.game_status === 'active' && currentPlayer && (
+        {session?.is_final_round && currentPlayer && (
+          <Badge className="text-sm px-4 py-2 bg-gradient-to-r from-amber-500 to-orange-500 animate-pulse">
+            🏆 FINAL ROUND - {currentPlayer.display_name}'s Last Chance!
+          </Badge>
+        )}
+        {session?.game_status === 'active' && currentPlayer && !session?.is_final_round && (
           <Badge className="text-sm px-4 py-2 bg-green-600">
             <User className="h-4 w-4 mr-2" />
             {currentPlayer.display_name}'s Turn

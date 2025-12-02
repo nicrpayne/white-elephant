@@ -78,8 +78,10 @@ export type Database = {
           active_player_id: string | null
           allow_immediate_stealback: boolean | null
           created_at: string | null
+          first_player_id: string | null
           game_status: string
           id: string
+          is_final_round: boolean | null
           max_steals_per_gift: number | null
           randomize_order: boolean | null
           round_index: number | null
@@ -92,8 +94,10 @@ export type Database = {
           active_player_id?: string | null
           allow_immediate_stealback?: boolean | null
           created_at?: string | null
+          first_player_id?: string | null
           game_status?: string
           id?: string
+          is_final_round?: boolean | null
           max_steals_per_gift?: number | null
           randomize_order?: boolean | null
           round_index?: number | null
@@ -106,8 +110,10 @@ export type Database = {
           active_player_id?: string | null
           allow_immediate_stealback?: boolean | null
           created_at?: string | null
+          first_player_id?: string | null
           game_status?: string
           id?: string
+          is_final_round?: boolean | null
           max_steals_per_gift?: number | null
           randomize_order?: boolean | null
           round_index?: number | null
@@ -120,6 +126,13 @@ export type Database = {
           {
             foreignKeyName: "fk_active_player"
             columns: ["active_player_id"]
+            isOneToOne: false
+            referencedRelation: "players"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "game_sessions_first_player_id_fkey"
+            columns: ["first_player_id"]
             isOneToOne: false
             referencedRelation: "players"
             referencedColumns: ["id"]

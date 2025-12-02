@@ -1,0 +1,2 @@
+ALTER TABLE game_sessions ADD COLUMN IF NOT EXISTS is_final_round BOOLEAN DEFAULT false;
+ALTER TABLE game_sessions ADD COLUMN IF NOT EXISTS first_player_id UUID REFERENCES players(id) ON DELETE SET NULL;
