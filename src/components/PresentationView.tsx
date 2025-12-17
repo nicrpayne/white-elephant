@@ -1,7 +1,7 @@
 import { useEffect, useState, useRef, useCallback } from 'react';
 import { useParams } from 'react-router-dom';
 import { supabase } from '@/lib/supabase';
-import { Card } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Gift, User, Clock } from 'lucide-react';
@@ -319,6 +319,150 @@ export default function PresentationView() {
 
   const gridLayout = getGridLayout();
 
+  // If game has ended, show results screen with game board
+  if (session?.game_status === 'ended') {
+    return (
+      <div className="h-screen bg-gradient-to-br from-purple-50 to-blue-50 flex flex-col overflow-hidden p-4">
+        {/* Header */}
+        <div className="flex-shrink-0 mb-4">
+          <Card className="bg-gradient-to-r from-purple-500 via-pink-500 to-orange-500 text-white">
+            <CardContent className="p-6 text-center">
+              <div className="flex items-center justify-center gap-3 mb-3">
+                <h1 className="text-4xl font-bold">Game Over!</h1>
+              </div>
+              <p className="text-xl text-white/90">
+                Thanks for playing White Elephant! Here's who got what:
+              </p>
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Two Column Layout: Results + Game Board */}
+        <div className="flex-1 grid grid-cols-2 gap-4 overflow-hidden">
+          {/* Left: Final Results */}
+          <div className="overflow-y-auto">
+            <Card className="h-full">
+              <CardContent className="p-4">
+                <h2 className="text-2xl font-bold mb-4">Final Results</h2>
+                <div className="space-y-3">
+                  {players.map((player, index) => {
+                    const playerGift = gifts.find(g => g.current_owner_id === player.id);
+                    
+                    return (
+                      <div 
+                        key={player.id} 
+                        className="flex items-center gap-3 p-3 bg-white rounded-lg border-2 border-gray-200"
+                      >
+                        {/* Rank */}
+                        <div className="flex-shrink-0 w-10 h-10 rounded-full bg-gradient-to-br from-purple-400 to-blue-400 flex items-center justify-center text-white font-bold text-lg">
+                          #{index + 1}
+                        </div>
+
+                        {/* Player Info */}
+                        <div className="flex items-center gap-2 flex-grow min-w-0">
+                          <Avatar className="h-10 w-10 flex-shrink-0">
+                            <AvatarImage src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${player.avatar_seed || player.display_name}`} />
+                            <AvatarFallback className="bg-gradient-to-br from-green-400 to-teal-400 text-white font-bold">
+                              {player.display_name.charAt(0).toUpperCase()}
+                            </AvatarFallback>
+                          </Avatar>
+                          <div className="flex-grow min-w-0">
+                            <p className="font-semibold text-base truncate">{player.display_name}</p>
+                          </div>
+                        </div>
+
+                        {/* Gift Display */}
+                        {playerGift ? (
+                          <div className="flex items-center gap-2 flex-shrink-0">
+                            {playerGift.image_url && (
+                              <img 
+                                src={playerGift.image_url} 
+                                alt={playerGift.name}
+                                className="w-12 h-12 rounded object-contain border-2 border-green-200"
+                              />
+                            )}
+                            <div className="min-w-0 max-w-[150px]">
+                              <p className="font-medium text-sm truncate">{playerGift.name}</p>
+                              <Badge variant="secondary" className="text-xs">
+                                Stolen {playerGift.steal_count}x
+                              </Badge>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="text-sm text-gray-500 italic flex-shrink-0">
+                            No gift
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Right: Game Board */}
+          <div className="overflow-hidden">
+            <Card className="h-full">
+              <CardContent className="p-4 h-full flex flex-col">
+                <h2 className="text-2xl font-bold mb-4">Final Board</h2>
+                <div className="flex-1 overflow-hidden">
+                  <div 
+                    className="grid gap-2 h-full"
+                    style={{
+                      gridTemplateColumns: `repeat(${gridLayout.cols}, minmax(0, 1fr))`,
+                      gridTemplateRows: `repeat(${gridLayout.rows}, minmax(0, 1fr))`
+                    }}
+                  >
+                    {gifts.map((gift) => {
+                      const owner = players.find((p) => p.id === gift.current_owner_id);
+                      const isLocked = gift.status === 'locked' || gift.steal_count >= 2;
+
+                      return (
+                        <div
+                          key={gift.id}
+                          className="relative rounded-lg overflow-hidden bg-white shadow-lg flex flex-col items-center justify-center"
+                        >
+                          <img
+                            src={gift.image_url}
+                            alt={gift.name}
+                            className="w-full h-full object-contain"
+                          />
+                          
+                          {isLocked && (
+                            <div className="absolute top-1 right-1 bg-yellow-500 text-white px-1.5 py-0.5 rounded-full text-xs font-bold">
+                              🔒
+                            </div>
+                          )}
+                          
+                          {owner && (
+                            <div className="absolute bottom-1 left-1 right-1">
+                              <div className={`${getAvatarColor(owner.display_name)} text-white px-2 py-1 rounded-full shadow-lg flex items-center gap-1.5`}>
+                                <Avatar className="h-4 w-4 border border-white/50">
+                                  <AvatarImage 
+                                    src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${owner.avatar_seed || owner.display_name}`}
+                                  />
+                                  <AvatarFallback className="text-white text-[8px] font-medium bg-white/20">
+                                    {getInitials(owner.display_name)}
+                                  </AvatarFallback>
+                                </Avatar>
+                                <span className="text-[10px] font-medium truncate">{owner.display_name}</span>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="h-screen bg-gradient-to-br from-red-50 via-green-50 to-blue-50 flex flex-col overflow-hidden p-4">
       {/* Compact Header */}
@@ -356,11 +500,6 @@ export default function PresentationView() {
               </Badge>
             )}
           </div>
-        )}
-        {session?.game_status === 'ended' && (
-          <Badge className="text-sm px-4 py-2 bg-blue-600">
-            Game Complete!
-          </Badge>
         )}
       </div>
 

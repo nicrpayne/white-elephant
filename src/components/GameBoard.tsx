@@ -305,7 +305,6 @@ const GameBoard = ({ isAdmin: isAdminProp }: GameBoardProps = {}) => {
           <Card className="bg-gradient-to-r from-purple-500 via-pink-500 to-orange-500 text-white">
             <CardContent className="p-4 sm:p-8 text-center">
               <div className="flex items-center justify-center gap-2 sm:gap-3 mb-2 sm:mb-4">
-                <img src="/elephant-icon.png" alt="White Elephant" className="w-8 h-8 sm:w-12 sm:h-12" />
                 <h1 className="text-2xl sm:text-4xl font-bold">Game Over!</h1>
                 <TreePine className="w-8 h-8 sm:w-12 sm:h-12" />
               </div>
