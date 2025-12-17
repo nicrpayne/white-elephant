@@ -1,11 +1,11 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import { Card, CardContent, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
 import { AlertDialog, AlertDialogAction, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
-import { Pause, Play, SkipForward, AlertCircle, Download, Gift, TreePine, Loader2 } from "lucide-react";
+import { Pause, Play, SkipForward, AlertCircle, Download, Gift, TreePine, Loader2, Clock } from "lucide-react";
 import GiftGrid from "./GiftGrid";
 import PlayerTurnPanel from "./PlayerTurnPanel";
 import ReportExport from "./ReportExport";
@@ -67,7 +67,60 @@ const GameBoard = ({ isAdmin: isAdminProp }: GameBoardProps = {}) => {
     isLocked: boolean;
   } | null>(null);
 
-  const { gifts, players, gameStatus, activePlayerId, currentPlayerId, sessionCode, isFinalRound, firstPlayerId } = gameState;
+  const { gifts, players, gameStatus, activePlayerId, currentPlayerId, sessionCode, isFinalRound, firstPlayerId, gameConfig } = gameState;
+  
+  // Timer state
+  const [timeRemaining, setTimeRemaining] = useState<number | null>(null);
+  const timerRef = useRef<NodeJS.Timeout | null>(null);
+  const lastActivePlayerRef = useRef<string | null>(null);
+  
+  // Reset timer when active player changes
+  useEffect(() => {
+    if (gameConfig.turnTimerEnabled && activePlayerId && gameStatus === "active") {
+      // Only reset timer if the active player actually changed
+      if (lastActivePlayerRef.current !== activePlayerId) {
+        lastActivePlayerRef.current = activePlayerId;
+        setTimeRemaining(gameConfig.turnTimerSeconds);
+      }
+    } else {
+      setTimeRemaining(null);
+      lastActivePlayerRef.current = null;
+    }
+  }, [activePlayerId, gameConfig.turnTimerEnabled, gameConfig.turnTimerSeconds, gameStatus]);
+  
+  // Countdown timer
+  useEffect(() => {
+    if (timeRemaining === null || timeRemaining <= 0 || gameStatus !== "active") {
+      if (timerRef.current) {
+        clearInterval(timerRef.current);
+        timerRef.current = null;
+      }
+      return;
+    }
+    
+    timerRef.current = setInterval(() => {
+      setTimeRemaining(prev => {
+        if (prev === null || prev <= 1) {
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+    
+    return () => {
+      if (timerRef.current) {
+        clearInterval(timerRef.current);
+        timerRef.current = null;
+      }
+    };
+  }, [timeRemaining, gameStatus]);
+  
+  // Format time for display
+  const formatTime = useCallback((seconds: number) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return mins > 0 ? `${mins}:${secs.toString().padStart(2, '0')}` : `${secs}s`;
+  }, []);
 
   // Auto-restore session if player navigates directly to game URL
   useEffect(() => {
@@ -265,7 +318,7 @@ const GameBoard = ({ isAdmin: isAdminProp }: GameBoardProps = {}) => {
           {/* Final Results */}
           <Card>
             <CardHeader>
-              <CardTitle className="text-xl sm:text-2xl">Final Results - Leaderboard</CardTitle>
+              <CardTitle className="text-xl sm:text-2xl">Final Results</CardTitle>
             </CardHeader>
             <CardContent>
               <div className="space-y-2 sm:space-y-3">
@@ -404,13 +457,29 @@ const GameBoard = ({ isAdmin: isAdminProp }: GameBoardProps = {}) => {
               <div className="bg-gradient-to-r from-amber-500 via-orange-500 to-red-500 rounded-lg p-3 sm:p-6 mb-3 sm:mb-4 shadow-lg border-4 border-yellow-300">
                 <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 sm:gap-0">
                   <div className="flex-grow">
-                    <p className="text-xs sm:text-sm text-white/90 mb-1 font-medium">🏆 FINAL ROUND!</p>
-                    <p className="text-xl sm:text-3xl font-bold text-white drop-shadow-lg">
-                      {activePlayer?.displayName}'s Last Chance
-                    </p>
-                    <p className="text-xs sm:text-sm text-white/80 mt-1">
-                      Steal a gift or keep your current one to end the game
-                    </p>
+                    <div className="flex items-center gap-3">
+                      <div>
+                        <p className="text-xs sm:text-sm text-white/90 mb-1 font-medium">🏆 FINAL ROUND!</p>
+                        <p className="text-xl sm:text-3xl font-bold text-white drop-shadow-lg">
+                          {activePlayer?.displayName}'s Last Chance
+                        </p>
+                        <p className="text-xs sm:text-sm text-white/80 mt-1">
+                          Steal a gift or keep your current one to end the game
+                        </p>
+                      </div>
+                      {/* Timer Display for Final Round */}
+                      {gameConfig.turnTimerEnabled && timeRemaining !== null && (
+                        <div className={`text-center bg-white/20 backdrop-blur-sm rounded-lg p-3 sm:p-4 ${timeRemaining <= 10 ? 'bg-red-500/40' : ''}`}>
+                          <div className="flex items-center justify-center gap-1 mb-1">
+                            <Clock className="h-3 w-3 sm:h-4 sm:w-4 text-white/90" />
+                            <p className="text-xs sm:text-sm text-white/90 font-medium">Time</p>
+                          </div>
+                          <p className={`text-2xl sm:text-3xl font-bold text-white drop-shadow-lg ${timeRemaining <= 10 ? 'animate-pulse' : ''}`}>
+                            {formatTime(timeRemaining)}
+                          </p>
+                        </div>
+                      )}
+                    </div>
                   </div>
                   {isMyTurn && (
                     <Button 
@@ -436,9 +505,23 @@ const GameBoard = ({ isAdmin: isAdminProp }: GameBoardProps = {}) => {
                       Pick a hidden gift or steal a revealed one
                     </p>
                   </div>
-                  <div className="text-left sm:text-right bg-white/20 backdrop-blur-sm rounded-lg p-3 sm:p-4 w-full sm:w-auto">
-                    <p className="text-xs sm:text-sm text-white/90 mb-1 font-medium">Round</p>
-                    <p className="text-3xl sm:text-4xl font-bold text-white drop-shadow-lg">{roundIndex}</p>
+                  <div className="flex gap-2 sm:gap-3 w-full sm:w-auto">
+                    {/* Timer Display */}
+                    {gameConfig.turnTimerEnabled && timeRemaining !== null && (
+                      <div className={`text-center bg-white/20 backdrop-blur-sm rounded-lg p-3 sm:p-4 flex-1 sm:flex-initial ${timeRemaining <= 10 ? 'bg-red-500/40' : ''}`}>
+                        <div className="flex items-center justify-center gap-1 mb-1">
+                          <Clock className="h-3 w-3 sm:h-4 sm:w-4 text-white/90" />
+                          <p className="text-xs sm:text-sm text-white/90 font-medium">Time</p>
+                        </div>
+                        <p className={`text-2xl sm:text-3xl font-bold text-white drop-shadow-lg ${timeRemaining <= 10 ? 'animate-pulse' : ''}`}>
+                          {formatTime(timeRemaining)}
+                        </p>
+                      </div>
+                    )}
+                    <div className="text-center bg-white/20 backdrop-blur-sm rounded-lg p-3 sm:p-4 flex-1 sm:flex-initial">
+                      <p className="text-xs sm:text-sm text-white/90 mb-1 font-medium">Round</p>
+                      <p className="text-3xl sm:text-4xl font-bold text-white drop-shadow-lg">{roundIndex}</p>
+                    </div>
                   </div>
                 </div>
               </div>

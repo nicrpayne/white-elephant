@@ -142,6 +142,13 @@ const GiftCard = ({ gift, giftNumber, onClick, isSelectable }: GiftCardProps) =>
                 </div>
               )}
               
+              {/* Steals Left indicator - top left for revealed gifts */}
+              {gift.status !== "hidden" && gift.status !== "locked" && gift.stealCount < 2 && (
+                <div className="absolute top-1 left-1 bg-blue-500 text-white px-1.5 py-0.5 rounded-full text-xs font-bold">
+                  {2 - gift.stealCount} steal{2 - gift.stealCount !== 1 ? 's' : ''} left
+                </div>
+              )}
+              
               {/* Owner name bubble at bottom (matching PresentationView) */}
               {gift.ownerName && (
                 <div className="absolute bottom-1 left-1 right-1">

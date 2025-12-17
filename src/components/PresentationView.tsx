@@ -1,10 +1,10 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef, useCallback } from 'react';
 import { useParams } from 'react-router-dom';
 import { supabase } from '@/lib/supabase';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { Gift, User } from 'lucide-react';
+import { Gift, User, Clock } from 'lucide-react';
 
 interface Gift {
   id: string;
@@ -29,6 +29,8 @@ interface Session {
   active_player_id: string | null;
   is_final_round: boolean | null;
   first_player_id: string | null;
+  turn_timer_enabled: boolean | null;
+  turn_timer_seconds: number | null;
 }
 
 interface StealAnimation {
@@ -63,6 +65,59 @@ export default function PresentationView() {
   const [session, setSession] = useState<Session | null>(null);
   const [revealedGiftId, setRevealedGiftId] = useState<string | null>(null);
   const [stealAnimation, setStealAnimation] = useState<StealAnimation | null>(null);
+  
+  // Timer state
+  const [timeRemaining, setTimeRemaining] = useState<number | null>(null);
+  const timerRef = useRef<NodeJS.Timeout | null>(null);
+  const lastActivePlayerRef = useRef<string | null>(null);
+  
+  // Format time for display
+  const formatTime = useCallback((seconds: number) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return mins > 0 ? `${mins}:${secs.toString().padStart(2, '0')}` : `${secs}s`;
+  }, []);
+  
+  // Reset timer when active player changes
+  useEffect(() => {
+    if (session?.turn_timer_enabled && session?.active_player_id && session?.game_status === 'active') {
+      // Only reset timer if the active player actually changed
+      if (lastActivePlayerRef.current !== session.active_player_id) {
+        lastActivePlayerRef.current = session.active_player_id;
+        setTimeRemaining(session.turn_timer_seconds ?? 60);
+      }
+    } else {
+      setTimeRemaining(null);
+      lastActivePlayerRef.current = null;
+    }
+  }, [session?.active_player_id, session?.turn_timer_enabled, session?.turn_timer_seconds, session?.game_status]);
+  
+  // Countdown timer
+  useEffect(() => {
+    if (timeRemaining === null || timeRemaining <= 0 || session?.game_status !== 'active') {
+      if (timerRef.current) {
+        clearInterval(timerRef.current);
+        timerRef.current = null;
+      }
+      return;
+    }
+    
+    timerRef.current = setInterval(() => {
+      setTimeRemaining(prev => {
+        if (prev === null || prev <= 1) {
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+    
+    return () => {
+      if (timerRef.current) {
+        clearInterval(timerRef.current);
+        timerRef.current = null;
+      }
+    };
+  }, [timeRemaining, session?.game_status]);
 
   useEffect(() => {
     if (!sessionCode) return;
@@ -276,15 +331,31 @@ export default function PresentationView() {
           </Badge>
         </div>
         {session?.is_final_round && currentPlayer && (
-          <Badge className="text-sm px-4 py-2 bg-gradient-to-r from-amber-500 to-orange-500 animate-pulse">
-            🏆 FINAL ROUND - {currentPlayer.display_name}'s Last Chance!
-          </Badge>
+          <div className="flex items-center gap-3">
+            <Badge className="text-sm px-4 py-2 bg-gradient-to-r from-amber-500 to-orange-500 animate-pulse">
+              🏆 FINAL ROUND - {currentPlayer.display_name}'s Last Chance!
+            </Badge>
+            {session?.turn_timer_enabled && timeRemaining !== null && (
+              <Badge className={`text-sm px-4 py-2 ${timeRemaining <= 10 ? 'bg-red-600 animate-pulse' : 'bg-gray-700'}`}>
+                <Clock className="h-4 w-4 mr-2" />
+                {formatTime(timeRemaining)}
+              </Badge>
+            )}
+          </div>
         )}
         {session?.game_status === 'active' && currentPlayer && !session?.is_final_round && (
-          <Badge className="text-sm px-4 py-2 bg-green-600">
-            <User className="h-4 w-4 mr-2" />
-            {currentPlayer.display_name}'s Turn
-          </Badge>
+          <div className="flex items-center gap-3">
+            <Badge className="text-sm px-4 py-2 bg-green-600">
+              <User className="h-4 w-4 mr-2" />
+              {currentPlayer.display_name}'s Turn
+            </Badge>
+            {session?.turn_timer_enabled && timeRemaining !== null && (
+              <Badge className={`text-sm px-4 py-2 ${timeRemaining <= 10 ? 'bg-red-600 animate-pulse' : 'bg-gray-700'}`}>
+                <Clock className="h-4 w-4 mr-2" />
+                {formatTime(timeRemaining)}
+              </Badge>
+            )}
+          </div>
         )}
         {session?.game_status === 'ended' && (
           <Badge className="text-sm px-4 py-2 bg-blue-600">
@@ -348,6 +419,13 @@ export default function PresentationView() {
                 {isLocked && (
                   <div className="absolute top-1 right-1 bg-yellow-500 text-white px-1.5 py-0.5 rounded-full text-xs font-bold">
                     🔒
+                  </div>
+                )}
+                
+                {/* Steals Left indicator - top left for revealed gifts */}
+                {!isHidden && !isLocked && gift.steal_count < 2 && (
+                  <div className="absolute top-1 left-1 bg-blue-500 text-white px-1.5 py-0.5 rounded-full text-xs font-bold">
+                    {2 - gift.steal_count} steal{2 - gift.steal_count !== 1 ? 's' : ''} left
                   </div>
                 )}
                 
