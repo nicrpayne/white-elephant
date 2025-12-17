@@ -83,6 +83,7 @@ export default function PresentationView() {
           .from('gifts')
           .select('*')
           .eq('session_id', sessionData.id)
+          .order('position', { nullsFirst: false })
           .order('created_at');
 
         if (giftsData) {

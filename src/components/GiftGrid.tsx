@@ -107,21 +107,21 @@ const GiftCard = ({ gift, giftNumber, onClick, isSelectable }: GiftCardProps) =>
       >
         <CardContent className="p-0 relative h-full flex flex-col">
           {gift.status === "hidden" ? (
-            <div className="bg-gradient-to-br from-purple-100 to-pink-100 flex items-center justify-center aspect-square w-full relative overflow-hidden">
-              {/* Cover image */}
+            /* Hidden Gift - Show Present Image with Number (matching PresentationView) */
+            <div className="relative aspect-square w-full flex items-center justify-center overflow-hidden">
               <img
                 src="https://images.unsplash.com/photo-1513885535751-8b9238bd345a?w=400&q=80"
-                alt="Mystery Gift"
-                className="absolute inset-0 w-full h-full object-cover opacity-40"
+                alt="Wrapped Gift"
+                className="w-full h-full object-cover"
               />
-              {/* Gift number */}
-              <div className="absolute top-2 left-2 bg-white/90 rounded-full w-8 h-8 flex items-center justify-center shadow-md z-10">
-                <span className="text-sm font-bold text-purple-600">{giftNumber}</span>
+              <div className="absolute inset-0 flex items-center justify-center">
+                <div className="bg-white/90 rounded-full w-10 h-10 sm:w-12 sm:h-12 flex items-center justify-center shadow-lg">
+                  <span className="text-lg sm:text-xl font-bold text-gray-800">{giftNumber}</span>
+                </div>
               </div>
-              {/* Gift icon */}
-              <Gift size={48} className="text-purple-500 relative z-10" />
             </div>
           ) : (
+            /* Revealed Gift - Show Image (matching PresentationView) */
             <div className="relative aspect-square w-full bg-white">
               {gift.imageUrl ? (
                 <img
@@ -135,44 +135,27 @@ const GiftCard = ({ gift, giftNumber, onClick, isSelectable }: GiftCardProps) =>
                 </div>
               )}
               
-              {/* Owner name bubble at bottom */}
-              {gift.status !== "hidden" && gift.ownerName && (
-                <div className="absolute bottom-2 left-2 right-2">
-                  <div className={`${getAvatarColor(gift.ownerName)} text-white px-3 py-1.5 rounded-full shadow-lg flex items-center gap-2`}>
-                    <Avatar className="h-5 w-5 border border-white/50">
+              {/* Locked indicator - top right (matching PresentationView) */}
+              {(gift.status === "locked" || gift.stealCount >= 2) && (
+                <div className="absolute top-1 right-1 bg-yellow-500 text-white px-1.5 py-0.5 rounded-full text-xs font-bold">
+                  🔒
+                </div>
+              )}
+              
+              {/* Owner name bubble at bottom (matching PresentationView) */}
+              {gift.ownerName && (
+                <div className="absolute bottom-1 left-1 right-1">
+                  <div className={`${getAvatarColor(gift.ownerName)} text-white px-2 py-1 rounded-full shadow-lg flex items-center gap-1.5`}>
+                    <Avatar className="h-4 w-4 border border-white/50">
                       <AvatarImage 
                         src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${gift.ownerAvatarSeed || gift.ownerName}`}
                       />
-                      <AvatarFallback className="text-white text-[10px] font-medium bg-white/20">
+                      <AvatarFallback className="text-white text-[8px] font-medium bg-white/20">
                         {getInitials(gift.ownerName)}
                       </AvatarFallback>
                     </Avatar>
-                    <span className="text-xs font-medium truncate">{gift.ownerName}</span>
+                    <span className="text-[10px] font-medium truncate">{gift.ownerName}</span>
                   </div>
-                </div>
-              )}
-              
-              {/* Steal count badge - top right */}
-              {gift.status !== "hidden" && (
-                <div className="absolute top-2 right-2">
-                  <Badge 
-                    variant={gift.stealCount >= 2 ? "destructive" : gift.stealCount === 1 ? "default" : "secondary"}
-                    className="text-xs font-bold shadow-lg"
-                  >
-                    {gift.stealCount >= 2 ? (
-                      <span className="flex items-center gap-1">
-                        <Lock size={12} /> Locked
-                      </span>
-                    ) : (
-                      <span>{2 - gift.stealCount} steal{2 - gift.stealCount !== 1 ? 's' : ''} left</span>
-                    )}
-                  </Badge>
-                </div>
-              )}
-              
-              {gift.status === "locked" && (
-                <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
-                  <Lock size={24} className="text-white" />
                 </div>
               )}
             </div>

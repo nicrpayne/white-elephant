@@ -91,13 +91,17 @@ const AdminDashboard = () => {
     setGameStatus, 
     setGameConfig, 
     setActivePlayerId,
-    loadPlayers
+    loadPlayers,
+    getStoredSessionInfo,
+    restoreSession,
+    clearSession
   } = useGame();
   
   const [currentStep, setCurrentStep] = useState(0);
   const [activeTab, setActiveTab] = useState("setup");
   const [newGiftUrl, setNewGiftUrl] = useState("");
   const [isLoadingPreview, setIsLoadingPreview] = useState(false);
+  const [isRestoringSession, setIsRestoringSession] = useState(true);
   const [previewData, setPreviewData] = useState<{
     title: string;
     description: string;
@@ -116,6 +120,14 @@ const AdminDashboard = () => {
 
   // Get values from context
   const { gifts, players, gameStatus, sessionCode, gameConfig } = gameState;
+
+  // Clear any existing session when creating a new game
+  // This ensures "Create Game" always starts fresh
+  useEffect(() => {
+    // Clear existing session to start fresh when user clicks "Create Game"
+    clearSession();
+    setIsRestoringSession(false);
+  }, []);
 
   // Auto-load players when in lobby status
   useEffect(() => {
@@ -725,6 +737,18 @@ const AdminDashboard = () => {
       setShowQrCode(true);
     }
   };
+
+  // Show loading while restoring session
+  if (isRestoringSession) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <div className="text-center">
+          <Loader2 className="h-8 w-8 animate-spin text-primary mx-auto mb-4" />
+          <p className="text-muted-foreground">Loading your session...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="container mx-auto p-4 bg-background">

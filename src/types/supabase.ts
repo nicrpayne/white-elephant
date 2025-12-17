@@ -148,6 +148,7 @@ export type Database = {
           image_url: string
           link: string | null
           name: string
+          position: number | null
           session_id: string
           status: string | null
           steal_count: number | null
@@ -160,6 +161,7 @@ export type Database = {
           image_url: string
           link?: string | null
           name: string
+          position?: number | null
           session_id: string
           status?: string | null
           steal_count?: number | null
@@ -172,6 +174,7 @@ export type Database = {
           image_url?: string
           link?: string | null
           name?: string
+          position?: number | null
           session_id?: string
           status?: string | null
           steal_count?: number | null

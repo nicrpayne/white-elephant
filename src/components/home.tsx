@@ -1,5 +1,5 @@
-import React from "react";
-import { Link } from "react-router-dom";
+import React, { useEffect, useState } from "react";
+import { Link, useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
@@ -12,14 +12,119 @@ import {
   CardTitle,
 } from "./ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "./ui/tabs";
-import { Gift, Users, Play, Info } from "lucide-react";
+import { Alert, AlertDescription, AlertTitle } from "./ui/alert";
+import { Gift, Users, Play, Info, RefreshCw, X, Loader2 } from "lucide-react";
+import { useGame } from "@/contexts/GameContext";
 
 const Home = () => {
   const [gamePin, setGamePin] = React.useState("");
   const [playerName, setPlayerName] = React.useState("");
+  const navigate = useNavigate();
+  const { getStoredSessionInfo, restoreSession, clearSession, isLoading } = useGame();
+  const [storedSession, setStoredSession] = useState<{ sessionCode: string; playerId: string | null; isAdmin: boolean } | null>(null);
+  const [isRestoring, setIsRestoring] = useState(false);
+  const [showResumeBanner, setShowResumeBanner] = useState(false);
+
+  // Check for stored session on mount
+  useEffect(() => {
+    const stored = getStoredSessionInfo();
+    if (stored) {
+      setStoredSession(stored);
+      setShowResumeBanner(true);
+    }
+  }, []);
+
+  const handleResumeSession = async () => {
+    if (!storedSession) return;
+    
+    setIsRestoring(true);
+    try {
+      const result = await restoreSession();
+      if (result.restored) {
+        // Navigate to the appropriate page
+        if (result.isAdmin) {
+          navigate(`/create`);
+        } else if (result.playerId && result.sessionCode) {
+          navigate(`/game/${result.sessionCode}?playerId=${result.playerId}`);
+        }
+      } else {
+        // Session no longer valid
+        setShowResumeBanner(false);
+        setStoredSession(null);
+      }
+    } catch (error) {
+      console.error('Error resuming session:', error);
+      setShowResumeBanner(false);
+      setStoredSession(null);
+    } finally {
+      setIsRestoring(false);
+    }
+  };
+
+  const handleDismissResume = () => {
+    clearSession();
+    setShowResumeBanner(false);
+    setStoredSession(null);
+  };
+
+  const handleCreateGame = () => {
+    // Clear any existing session to start fresh
+    clearSession();
+    setShowResumeBanner(false);
+    setStoredSession(null);
+    navigate("/admin/create");
+  };
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-background to-background/90">
+      {/* Resume Session Banner */}
+      {showResumeBanner && storedSession && (
+        <motion.div
+          initial={{ opacity: 0, y: -20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="bg-gradient-to-r from-green-500 to-emerald-500 text-white"
+        >
+          <div className="container mx-auto px-4 py-3 flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <RefreshCw className="h-5 w-5" />
+              <div>
+                <p className="font-medium">
+                  {storedSession.isAdmin ? "You have an active game session" : "You're in an active game"}
+                </p>
+                <p className="text-sm text-white/80">
+                  Session: {storedSession.sessionCode} • {storedSession.isAdmin ? "Host" : "Player"}
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <Button 
+                size="sm" 
+                variant="secondary"
+                onClick={handleResumeSession}
+                disabled={isRestoring}
+              >
+                {isRestoring ? (
+                  <>
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    Resuming...
+                  </>
+                ) : (
+                  "Resume Game"
+                )}
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                className="text-white hover:bg-white/20"
+                onClick={handleDismissResume}
+              >
+                <X className="h-4 w-4" />
+              </Button>
+            </div>
+          </div>
+        </motion.div>
+      )}
+
       {/* Header */}
       <header className="container mx-auto px-4 py-6 flex justify-between items-center">
         <div className="flex items-center gap-2">
@@ -57,8 +162,8 @@ const Home = () => {
             transition={{ delay: 0.3, duration: 0.5 }}
             className="flex flex-col sm:flex-row gap-4 pt-4"
           >
-            <Button size="lg" asChild>
-              <Link to="/admin/create">Create a Game</Link>
+            <Button size="lg" onClick={handleCreateGame}>
+              Create a Game
             </Button>
             <Button size="lg" variant="outline" asChild>
               <Link to="/join">Join a Game</Link>

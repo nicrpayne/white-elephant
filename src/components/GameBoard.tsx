@@ -5,12 +5,12 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
 import { AlertDialog, AlertDialogAction, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
-import { Pause, Play, SkipForward, AlertCircle, Download, Gift, TreePine } from "lucide-react";
+import { Pause, Play, SkipForward, AlertCircle, Download, Gift, TreePine, Loader2 } from "lucide-react";
 import GiftGrid from "./GiftGrid";
 import PlayerTurnPanel from "./PlayerTurnPanel";
 import ReportExport from "./ReportExport";
 import { useGame } from "@/contexts/GameContext";
-import { useSearchParams } from "react-router-dom";
+import { useSearchParams, useNavigate, useParams } from "react-router-dom";
 
 interface Gift {
   id: string;
@@ -50,12 +50,15 @@ interface GameBoardProps {
 
 const GameBoard = ({ isAdmin: isAdminProp }: GameBoardProps = {}) => {
   const [searchParams] = useSearchParams();
+  const navigate = useNavigate();
+  const { sessionCode: urlSessionCode } = useParams();
   const playerId = searchParams.get("playerId");
-  const { gameState, pickGift, stealGift, keepGift, updateGameStatus } = useGame();
+  const { gameState, pickGift, stealGift, keepGift, updateGameStatus, getStoredSessionInfo, restoreSession } = useGame();
   const [activeTab, setActiveTab] = useState("board");
   const [selectedGiftId, setSelectedGiftId] = useState<string | null>(null);
   const [showTurnAlert, setShowTurnAlert] = useState(false);
   const [showStealAlert, setShowStealAlert] = useState(false);
+  const [isRestoringSession, setIsRestoringSession] = useState(false);
   const [stealAlertData, setStealAlertData] = useState<{
     giftName: string;
     stealerName: string;
@@ -66,6 +69,54 @@ const GameBoard = ({ isAdmin: isAdminProp }: GameBoardProps = {}) => {
 
   const { gifts, players, gameStatus, activePlayerId, currentPlayerId, sessionCode, isFinalRound, firstPlayerId } = gameState;
 
+  // Auto-restore session if player navigates directly to game URL
+  useEffect(() => {
+    const tryRestoreSession = async () => {
+      // If we have a URL session code but no session loaded in state
+      if (urlSessionCode && !gameState.sessionId) {
+        const stored = getStoredSessionInfo();
+        
+        // Case 1: No playerId in URL - try to restore from storage
+        if (!playerId) {
+          if (stored && stored.sessionCode?.toUpperCase() === urlSessionCode?.toUpperCase()) {
+            setIsRestoringSession(true);
+            try {
+              const result = await restoreSession();
+              if (result.restored && result.playerId) {
+                // Add playerId to URL
+                navigate(`/game/${result.sessionCode}?playerId=${result.playerId}`, { replace: true });
+              } else {
+                // Session couldn't be restored, redirect to join
+                navigate(`/join?code=${urlSessionCode}`);
+              }
+            } catch (error) {
+              console.error('Error restoring session:', error);
+              navigate(`/join?code=${urlSessionCode}`);
+            } finally {
+              setIsRestoringSession(false);
+            }
+          }
+        } 
+        // Case 2: Has playerId in URL but no session loaded (e.g., page refresh on leaderboard)
+        else if (stored && stored.sessionCode?.toUpperCase() === urlSessionCode?.toUpperCase()) {
+          setIsRestoringSession(true);
+          try {
+            const result = await restoreSession();
+            if (!result.restored) {
+              console.error('Failed to restore session with playerId');
+            }
+          } catch (error) {
+            console.error('Error restoring session:', error);
+          } finally {
+            setIsRestoringSession(false);
+          }
+        }
+      }
+    };
+
+    tryRestoreSession();
+  }, [urlSessionCode, playerId, gameState.sessionId]);
+
   // Calculate round index
   const roundIndex = players.filter(p => p.hasCompletedTurn).length + 1;
 
@@ -75,6 +126,18 @@ const GameBoard = ({ isAdmin: isAdminProp }: GameBoardProps = {}) => {
   // Use prop if provided, otherwise check player data
   const isAdmin = isAdminProp ?? (currentPlayer?.isAdmin || false);
   const activePlayer = players.find(p => p.id === activePlayerId);
+
+  // Show loading while restoring session
+  if (isRestoringSession) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-red-50 via-green-50 to-red-50 flex items-center justify-center">
+        <div className="text-center">
+          <Loader2 className="h-8 w-8 animate-spin text-green-600 mx-auto mb-4" />
+          <p className="text-gray-600">Restoring your session...</p>
+        </div>
+      </div>
+    );
+  }
 
   // Listen for turn changes
   useEffect(() => {
