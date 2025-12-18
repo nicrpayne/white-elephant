@@ -61,7 +61,7 @@ const GameBoard = ({ isAdmin: isAdminProp }: GameBoardProps = {}) => {
   const [selectedGiftId, setSelectedGiftId] = useState<string | null>(null);
   const [showTurnAlert, setShowTurnAlert] = useState(false);
   const [showStealAlert, setShowStealAlert] = useState(false);
-  const [isRestoringSession, setIsRestoringSession] = useState(false);
+  const [isRestoringSession, setIsRestoringSession] = useState(true); // Start as true until we verify session
   const { toast } = useToast();
   const [stealAlertData, setStealAlertData] = useState<{
     giftName: string;
@@ -142,11 +142,18 @@ const GameBoard = ({ isAdmin: isAdminProp }: GameBoardProps = {}) => {
       }
       
       // Prevent multiple restoration attempts
-      if (hasAttemptedRestore.current) return;
+      if (hasAttemptedRestore.current) {
+        // If we already attempted and have a session, clear the restoring flag
+        if (gameState.sessionId) {
+          setIsRestoringSession(false);
+        }
+        return;
+      }
       
       // If session is already loaded (context auto-restored it), check if it matches URL
       if (gameState.sessionId) {
         hasAttemptedRestore.current = true;
+        setIsRestoringSession(false);
         console.log('GameBoard: Session already loaded:', gameState.sessionCode);
         
         // If URL has a different session code than what's loaded, redirect to join for the new session
@@ -166,22 +173,44 @@ const GameBoard = ({ isAdmin: isAdminProp }: GameBoardProps = {}) => {
       
       // Mark that we're attempting restoration
       hasAttemptedRestore.current = true;
+      setIsRestoringSession(true);
       
       const stored = getStoredSessionInfo();
       console.log('GameBoard: Checking for stored session...', stored);
       
-      // If URL has a session code that differs from stored session, redirect to join for the new session
+      // PRIORITY 1: If URL has valid params (sessionCode + playerId), try to restore from URL first
+      // This is the most reliable method on browser refresh since the URL is always available
+      if (urlSessionCode && playerId) {
+        console.log('GameBoard: URL has params. Attempting to restore from URL...');
+        try {
+          const result = await restoreSessionFromUrl(urlSessionCode, playerId);
+          if (result.restored) {
+            console.log('GameBoard: Successfully restored session from URL params');
+            // Keep isRestoringSession true - it will be cleared when gameState.sessionId updates
+            // and the effect re-runs
+            return;
+          } else {
+            console.log('GameBoard: Could not restore from URL params');
+            // Fall through to try localStorage or redirect
+          }
+        } catch (error) {
+          console.error('Error restoring from URL:', error);
+          // Fall through to try localStorage or redirect
+        }
+      }
+      
+      // PRIORITY 2: If URL has a session code that differs from stored session, redirect to join for the new session
       if (urlSessionCode && stored && stored.sessionCode && urlSessionCode.toUpperCase() !== stored.sessionCode.toUpperCase()) {
         console.log('GameBoard: URL session differs from stored session, redirecting to join for new game');
+        setIsRestoringSession(false);
         navigate(`/join?code=${urlSessionCode}`, { replace: true });
         return;
       }
       
-      // If user has a stored player session, try to restore it
+      // PRIORITY 3: If user has a stored player session, try to restore it
       if (stored && stored.playerId && !stored.isAdmin) {
-        setIsRestoringSession(true);
         try {
-          console.log('GameBoard: Attempting to restore player session...');
+          console.log('GameBoard: Attempting to restore player session from localStorage...');
           const result = await restoreSession();
           console.log('GameBoard: Restore result:', result);
           if (result.restored && result.playerId && result.sessionCode) {
@@ -191,20 +220,20 @@ const GameBoard = ({ isAdmin: isAdminProp }: GameBoardProps = {}) => {
           } else {
             // Session couldn't be restored, redirect to join
             console.log('GameBoard: Session restore failed, redirecting to join');
+            setIsRestoringSession(false);
             navigate(`/join`, { replace: true });
+            return;
           }
         } catch (error) {
           console.error('Error restoring session:', error);
-          navigate(`/join`, { replace: true });
-        } finally {
           setIsRestoringSession(false);
+          navigate(`/join`, { replace: true });
+          return;
         }
-        return;
       }
       
-      // If user has admin session stored, redirect to admin
+      // PRIORITY 4: If user has admin session stored, redirect to admin
       if (stored && stored.isAdmin) {
-        setIsRestoringSession(true);
         try {
           console.log('GameBoard: Attempting to restore admin session...');
           const result = await restoreSession();
@@ -214,36 +243,12 @@ const GameBoard = ({ isAdmin: isAdminProp }: GameBoardProps = {}) => {
           }
         } catch (error) {
           console.error('Error restoring admin session:', error);
-        } finally {
-          setIsRestoringSession(false);
         }
       }
       
-      // No stored session - but check if URL has valid params (player refreshed/dropped)
-      if (urlSessionCode && playerId) {
-        console.log('GameBoard: No stored session, but URL has params. Attempting to restore from URL...');
-        setIsRestoringSession(true);
-        try {
-          const result = await restoreSessionFromUrl(urlSessionCode, playerId);
-          if (result.restored) {
-            console.log('GameBoard: Successfully restored session from URL params');
-            // Session is now loaded, component will re-render with data
-            return;
-          } else {
-            console.log('GameBoard: Could not restore from URL params, redirecting to join');
-            navigate(`/join`, { replace: true });
-          }
-        } catch (error) {
-          console.error('Error restoring from URL:', error);
-          navigate(`/join`, { replace: true });
-        } finally {
-          setIsRestoringSession(false);
-        }
-        return;
-      }
-      
-      // No stored session and no URL params - redirect to join page
+      // No stored session and no valid URL params - redirect to join page
       console.log('GameBoard: No stored session found, redirecting to join');
+      setIsRestoringSession(false);
       navigate(`/join`, { replace: true });
     };
 
@@ -271,18 +276,6 @@ const GameBoard = ({ isAdmin: isAdminProp }: GameBoardProps = {}) => {
       document.title = "White Elephant Game";
     };
   }, [isMyTurn, gameStatus]);
-
-  // Show loading while restoring session or context is loading
-  if (isRestoringSession || contextLoading) {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-red-50 via-green-50 to-red-50 flex items-center justify-center">
-        <div className="text-center">
-          <Loader2 className="h-8 w-8 animate-spin text-green-600 mx-auto mb-4" />
-          <p className="text-gray-600">Restoring your session...</p>
-        </div>
-      </div>
-    );
-  }
 
   // Request notification permission on mount
   useEffect(() => {
@@ -459,6 +452,38 @@ const GameBoard = ({ isAdmin: isAdminProp }: GameBoardProps = {}) => {
       window.removeEventListener('giftStolen', handleSteal as EventListener);
     };
   }, []);
+
+  // Show loading while restoring session or context is loading
+  if (isRestoringSession || contextLoading) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-red-50 via-green-50 to-red-50 flex items-center justify-center">
+        <div className="text-center">
+          <Loader2 className="h-8 w-8 animate-spin text-green-600 mx-auto mb-4" />
+          <p className="text-gray-600">Restoring your session...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // If no session is loaded after restoration attempt, show a message with redirect option
+  // Only show this if we're truly done trying to restore (not restoring AND attempted AND no session)
+  if (!gameState.sessionId && !contextLoading && !isRestoringSession && hasAttemptedRestore.current) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-red-50 via-green-50 to-red-50 flex items-center justify-center">
+        <div className="text-center">
+          <img src="/elephant-icon.png" alt="White Elephant" className="h-16 w-16 mx-auto mb-4 opacity-50" />
+          <h2 className="text-xl font-semibold text-gray-700 mb-2">Session Not Found</h2>
+          <p className="text-gray-500 mb-4">Your session may have expired or been cleared.</p>
+          <button
+            onClick={() => navigate('/join', { replace: true })}
+            className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
+          >
+            Join a Game
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   const handleGiftSelect = async (giftId: string) => {
     if (!isMyTurn) return;
