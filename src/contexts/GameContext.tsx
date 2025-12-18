@@ -110,7 +110,7 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
     firstPlayerId: null,
   });
 
-  const [isLoading, setIsLoading] = useState(false);
+  const [isLoading, setIsLoading] = useState(true); // Start as true to handle initial session check
   const [realtimeChannel, setRealtimeChannel] = useState<RealtimeChannel | null>(null);
 
   // Subscribe to real-time updates when sessionId changes
@@ -939,6 +939,29 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
       if (!gift || !gift.currentOwnerId) return;
 
       const previousOwnerId = gift.currentOwnerId;
+
+      // Check for immediate steal-back if the rule is disabled
+      if (!gameState.gameConfig.allowImmediateStealback) {
+        // Query the most recent steal action for this gift
+        const { data: lastStealAction, error: actionError } = await supabase
+          .from('game_actions')
+          .select('*')
+          .eq('session_id', gameState.sessionId)
+          .eq('gift_id', giftId)
+          .eq('action_type', 'steal')
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .single();
+
+        if (actionError && actionError.code !== 'PGRST116') {
+          console.error('Error checking last steal action:', actionError);
+        }
+
+        // If the last steal was FROM the current player, don't allow immediate steal-back
+        if (lastStealAction && lastStealAction.previous_owner_id === gameState.activePlayerId) {
+          throw new Error('You cannot immediately steal back a gift that was just stolen from you');
+        }
+      }
       const newStealCount = gift.stealCount + 1;
       
       // Get player names for the notification
@@ -1090,7 +1113,11 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
           await restoreSession();
         } catch (error) {
           console.error('Failed to auto-restore session:', error);
+          setIsLoading(false);
         }
+      } else {
+        // No stored session to restore, set loading to false
+        setIsLoading(false);
       }
     };
 

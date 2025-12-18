@@ -1,5 +1,5 @@
 import { Suspense } from "react";
-import { useRoutes, Routes, Route } from "react-router-dom";
+import { useRoutes, Routes, Route, Navigate } from "react-router-dom";
 import Home from "./components/home";
 import AdminDashboard from "./components/AdminDashboard";
 import GameBoard from "./components/GameBoard";
@@ -19,6 +19,8 @@ function App() {
           <Route path="/game/:sessionCode" element={<GameBoard />} />
           <Route path="/join" element={<JoinGame />} />
           <Route path="/presentation/:sessionCode" element={<PresentationView />} />
+          {/* Catch-all route - redirect to join (which will check for active session) */}
+          <Route path="*" element={<Navigate to="/join" replace />} />
         </Routes>
         {import.meta.env.VITE_TEMPO === "true" && useRoutes(routes)}
         <Toaster />

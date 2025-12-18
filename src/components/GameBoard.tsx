@@ -5,7 +5,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
 import { AlertDialog, AlertDialogAction, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
-import { Pause, Play, SkipForward, AlertCircle, Download, Gift, TreePine, Loader2, Clock } from "lucide-react";
+import { Pause, Play, SkipForward, AlertCircle, Download, Gift, TreePine, Loader2, Clock, Bell } from "lucide-react";
+import { useToast } from "@/components/ui/use-toast";
 import GiftGrid from "./GiftGrid";
 import PlayerTurnPanel from "./PlayerTurnPanel";
 import ReportExport from "./ReportExport";
@@ -53,12 +54,13 @@ const GameBoard = ({ isAdmin: isAdminProp }: GameBoardProps = {}) => {
   const navigate = useNavigate();
   const { sessionCode: urlSessionCode } = useParams();
   const playerId = searchParams.get("playerId");
-  const { gameState, pickGift, stealGift, keepGift, updateGameStatus, getStoredSessionInfo, restoreSession } = useGame();
+  const { gameState, isLoading: contextLoading, pickGift, stealGift, keepGift, updateGameStatus, getStoredSessionInfo, restoreSession } = useGame();
   const [activeTab, setActiveTab] = useState("board");
   const [selectedGiftId, setSelectedGiftId] = useState<string | null>(null);
   const [showTurnAlert, setShowTurnAlert] = useState(false);
   const [showStealAlert, setShowStealAlert] = useState(false);
   const [isRestoringSession, setIsRestoringSession] = useState(false);
+  const { toast } = useToast();
   const [stealAlertData, setStealAlertData] = useState<{
     giftName: string;
     stealerName: string;
@@ -122,53 +124,89 @@ const GameBoard = ({ isAdmin: isAdminProp }: GameBoardProps = {}) => {
     return mins > 0 ? `${mins}:${secs.toString().padStart(2, '0')}` : `${secs}s`;
   }, []);
 
+  // Track if we've already attempted restoration
+  const hasAttemptedRestore = useRef(false);
+
   // Auto-restore session if player navigates directly to game URL
   useEffect(() => {
     const tryRestoreSession = async () => {
-      // If we have a URL session code but no session loaded in state
-      if (urlSessionCode && !gameState.sessionId) {
-        const stored = getStoredSessionInfo();
+      // Wait for context to finish loading first
+      if (contextLoading) {
+        console.log('GameBoard: Context still loading, waiting...');
+        return;
+      }
+      
+      // Prevent multiple restoration attempts
+      if (hasAttemptedRestore.current) return;
+      
+      // If session is already loaded (context auto-restored it), just update URL if needed
+      if (gameState.sessionId) {
+        hasAttemptedRestore.current = true;
+        console.log('GameBoard: Session already loaded:', gameState.sessionCode);
         
-        // Case 1: No playerId in URL - try to restore from storage
-        if (!playerId) {
-          if (stored && stored.sessionCode?.toUpperCase() === urlSessionCode?.toUpperCase()) {
-            setIsRestoringSession(true);
-            try {
-              const result = await restoreSession();
-              if (result.restored && result.playerId) {
-                // Add playerId to URL
-                navigate(`/game/${result.sessionCode}?playerId=${result.playerId}`, { replace: true });
-              } else {
-                // Session couldn't be restored, redirect to join
-                navigate(`/join?code=${urlSessionCode}`);
-              }
-            } catch (error) {
-              console.error('Error restoring session:', error);
-              navigate(`/join?code=${urlSessionCode}`);
-            } finally {
-              setIsRestoringSession(false);
-            }
+        // If we have a session but URL doesn't have playerId, add it
+        const stored = getStoredSessionInfo();
+        if (stored && stored.playerId && !playerId) {
+          navigate(`/game/${gameState.sessionCode}?playerId=${stored.playerId}`, { replace: true });
+        }
+        return;
+      }
+      
+      // Mark that we're attempting restoration
+      hasAttemptedRestore.current = true;
+      
+      const stored = getStoredSessionInfo();
+      console.log('GameBoard: Checking for stored session...', stored);
+      
+      // If user has a stored player session, try to restore it
+      if (stored && stored.playerId && !stored.isAdmin) {
+        setIsRestoringSession(true);
+        try {
+          console.log('GameBoard: Attempting to restore player session...');
+          const result = await restoreSession();
+          console.log('GameBoard: Restore result:', result);
+          if (result.restored && result.playerId && result.sessionCode) {
+            // Redirect to the user's actual session (may differ from URL)
+            navigate(`/game/${result.sessionCode}?playerId=${result.playerId}`, { replace: true });
+            return;
+          } else {
+            // Session couldn't be restored, redirect to join
+            console.log('GameBoard: Session restore failed, redirecting to join');
+            navigate(`/join`, { replace: true });
           }
-        } 
-        // Case 2: Has playerId in URL but no session loaded (e.g., page refresh on leaderboard)
-        else if (stored && stored.sessionCode?.toUpperCase() === urlSessionCode?.toUpperCase()) {
-          setIsRestoringSession(true);
-          try {
-            const result = await restoreSession();
-            if (!result.restored) {
-              console.error('Failed to restore session with playerId');
-            }
-          } catch (error) {
-            console.error('Error restoring session:', error);
-          } finally {
-            setIsRestoringSession(false);
+        } catch (error) {
+          console.error('Error restoring session:', error);
+          navigate(`/join`, { replace: true });
+        } finally {
+          setIsRestoringSession(false);
+        }
+        return;
+      }
+      
+      // If user has admin session stored, redirect to admin
+      if (stored && stored.isAdmin) {
+        setIsRestoringSession(true);
+        try {
+          console.log('GameBoard: Attempting to restore admin session...');
+          const result = await restoreSession();
+          if (result.restored && result.isAdmin) {
+            navigate('/create', { replace: true });
+            return;
           }
+        } catch (error) {
+          console.error('Error restoring admin session:', error);
+        } finally {
+          setIsRestoringSession(false);
         }
       }
+      
+      // No stored session - redirect to join page
+      console.log('GameBoard: No stored session found, redirecting to join');
+      navigate(`/join`, { replace: true });
     };
 
     tryRestoreSession();
-  }, [urlSessionCode, playerId, gameState.sessionId]);
+  }, [contextLoading, gameState.sessionId]);
 
   // Calculate round index
   const roundIndex = players.filter(p => p.hasCompletedTurn).length + 1;
@@ -180,8 +218,8 @@ const GameBoard = ({ isAdmin: isAdminProp }: GameBoardProps = {}) => {
   const isAdmin = isAdminProp ?? (currentPlayer?.isAdmin || false);
   const activePlayer = players.find(p => p.id === activePlayerId);
 
-  // Show loading while restoring session
-  if (isRestoringSession) {
+  // Show loading while restoring session or context is loading
+  if (isRestoringSession || contextLoading) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-red-50 via-green-50 to-red-50 flex items-center justify-center">
         <div className="text-center">
@@ -199,6 +237,12 @@ const GameBoard = ({ isAdmin: isAdminProp }: GameBoardProps = {}) => {
       // Show alert if it's this player's turn
       if (playerId && newPlayerId === playerId) {
         setShowTurnAlert(true);
+        // Show toast notification
+        toast({
+          title: "🎉 It's Your Turn!",
+          description: "Pick a new gift or steal from another player",
+          duration: 5000,
+        });
       }
     };
 
@@ -206,13 +250,17 @@ const GameBoard = ({ isAdmin: isAdminProp }: GameBoardProps = {}) => {
     return () => {
       window.removeEventListener('turnChanged', handleTurnChange as EventListener);
     };
-  }, [playerId]);
+  }, [playerId, toast]);
   
   // Listen for steal events
   useEffect(() => {
     const handleSteal = (event: CustomEvent) => {
       setStealAlertData(event.detail);
       setShowStealAlert(true);
+      // Auto-close after 6 seconds (doubled from 3)
+      setTimeout(() => {
+        setShowStealAlert(false);
+      }, 6000);
     };
 
     window.addEventListener('giftStolen', handleSteal as EventListener);
@@ -238,7 +286,12 @@ const GameBoard = ({ isAdmin: isAdminProp }: GameBoardProps = {}) => {
     } catch (error) {
       console.error("Error selecting gift:", error);
       const errorMessage = error instanceof Error ? error.message : "Failed to select gift. Please try again.";
-      alert(errorMessage);
+      toast({
+        title: "Cannot Select Gift",
+        description: errorMessage,
+        variant: "destructive",
+        duration: 4000,
+      });
     }
   };
 

@@ -29,33 +29,58 @@ export default function JoinGame() {
   // Check for existing session on mount
   useEffect(() => {
     const checkExistingSession = async () => {
-      // If there's a code in the URL (QR code scan), prioritize it and skip restoration
-      const codeFromUrl = searchParams.get("code");
-      if (codeFromUrl) {
-        console.log('QR code detected, skipping session restoration');
-        setIsCheckingSession(false);
+      // Wait for context to finish its initial loading
+      if (contextLoading) {
         return;
       }
-
+      
+      // If context already restored a session, redirect
+      if (gameState.sessionId) {
+        const stored = getStoredSessionInfo();
+        if (stored && stored.playerId && !stored.isAdmin) {
+          navigate(`/game/${gameState.sessionCode}?playerId=${stored.playerId}`, { replace: true });
+          return;
+        } else if (stored && stored.isAdmin) {
+          navigate('/create', { replace: true });
+          return;
+        }
+      }
+      
       const stored = getStoredSessionInfo();
-      if (stored && !stored.isAdmin && stored.playerId) {
+      
+      // Always check for stored session first - if user has an active session, redirect them
+      if (stored && stored.playerId && !stored.isAdmin) {
         // Try to restore the session
         try {
           const result = await restoreSession();
           if (result.restored && result.playerId && result.sessionCode) {
             // Session restored, navigate to game
-            navigate(`/game/${result.sessionCode}?playerId=${result.playerId}`);
+            navigate(`/game/${result.sessionCode}?playerId=${result.playerId}`, { replace: true });
             return;
           }
         } catch (error) {
           console.log('Could not restore session, showing join form');
         }
       }
+      
+      // If admin has stored session, redirect to admin dashboard
+      if (stored && stored.isAdmin) {
+        try {
+          const result = await restoreSession();
+          if (result.restored && result.isAdmin) {
+            navigate('/create', { replace: true });
+            return;
+          }
+        } catch (error) {
+          console.log('Could not restore admin session, showing join form');
+        }
+      }
+      
       setIsCheckingSession(false);
     };
     
     checkExistingSession();
-  }, []);
+  }, [contextLoading, gameState.sessionId]);
 
   // Pre-populate game code from URL parameter
   useEffect(() => {
@@ -81,8 +106,8 @@ export default function JoinGame() {
     }
   }, [hasJoined, gameState.gameStatus, navigate, gameState.sessionCode, playerId]);
 
-  // Show loading while checking for existing session
-  if (isCheckingSession) {
+  // Show loading while checking for existing session or context is loading
+  if (isCheckingSession || contextLoading) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-green-50 via-emerald-50 to-teal-50 flex items-center justify-center">
         <Loader2 className="h-8 w-8 animate-spin text-green-600" />

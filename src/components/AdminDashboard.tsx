@@ -1133,50 +1133,55 @@ const AdminDashboard = () => {
           </div>
         </div>
       ) : gameStatus === "lobby" ? (
-        // Lobby waiting room
-        <div className="space-y-6">
-          <Card>
-            <CardHeader>
-              <div className="flex items-center justify-between">
-                <div>
-                  <CardTitle>Lobby Open - Waiting for Players</CardTitle>
-                  <CardDescription>
-                    {players.length} player{players.length !== 1 ? 's' : ''} joined • Need at least 2 to start
-                  </CardDescription>
+        // Admin Lobby Control Center
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          {/* Left Column - Players Queue */}
+          <div className="lg:col-span-2 space-y-6">
+            {/* Join Code Banner */}
+            <Card className="bg-gradient-to-r from-green-500 to-emerald-600 text-white">
+              <CardContent className="p-6">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-green-100 text-sm font-medium mb-1">Join Code</p>
+                    <div className="text-5xl font-bold tracking-wider">{sessionCode}</div>
+                  </div>
+                  <div className="flex flex-col gap-2">
+                    <Button variant="secondary" size="sm" onClick={handleCopyLink}>
+                      <Copy className="h-4 w-4 mr-2" />
+                      Copy Link
+                    </Button>
+                    <Button variant="secondary" size="sm" onClick={handleGenerateQrCode}>
+                      <QrCode className="h-4 w-4 mr-2" />
+                      QR Code
+                    </Button>
+                    <Button variant="secondary" size="sm" onClick={handleShareInvite}>
+                      <Share2 className="h-4 w-4 mr-2" />
+                      Share
+                    </Button>
+                  </div>
                 </div>
-                <Badge variant="secondary" className="text-lg px-4 py-2">
-                  Lobby Open
-                </Badge>
-              </div>
-            </CardHeader>
-            <CardContent className="space-y-6">
-              <div className="text-center p-8 border-2 border-dashed border-primary/50 rounded-lg bg-primary/5">
-                <div className="text-5xl font-bold text-primary mb-3">{sessionCode}</div>
-                <p className="text-muted-foreground mb-6">Share this code with players</p>
-                <div className="flex flex-col sm:flex-row gap-3 justify-center">
-                  <Button variant="outline" onClick={handleCopyLink}>
-                    <Copy className="h-4 w-4 mr-2" />
-                    Copy Link
-                  </Button>
-                  <Button variant="outline" onClick={handleGenerateQrCode}>
-                    <QrCode className="h-4 w-4 mr-2" />
-                    Show QR Code
-                  </Button>
-                  <Button variant="outline" onClick={handleShareInvite}>
-                    <Share2 className="h-4 w-4 mr-2" />
-                    Share Invite
-                  </Button>
-                </div>
-              </div>
+              </CardContent>
+            </Card>
 
-              <Separator />
-
-              <div>
-                <div className="flex items-center justify-between mb-3">
-                  <h3 className="font-semibold">Players Joined ({players.length})</h3>
-                  <div className="flex gap-2">
+            {/* Players Queue */}
+            <Card>
+              <CardHeader>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <CardTitle className="flex items-center gap-2">
+                      <Users className="h-5 w-5" />
+                      Players in Lobby
+                    </CardTitle>
+                    <CardDescription>
+                      {players.length} player{players.length !== 1 ? 's' : ''} waiting • Need at least 2 to start
+                    </CardDescription>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Badge variant={players.length >= 2 ? "default" : "secondary"} className="text-lg px-4 py-2">
+                      {players.length >= 2 ? "Ready!" : "Waiting..."}
+                    </Badge>
                     <Button 
-                      variant="outline" 
+                      variant="ghost" 
                       size="sm"
                       onClick={async () => {
                         if (gameState.sessionId && loadPlayers) {
@@ -1188,90 +1193,276 @@ const AdminDashboard = () => {
                         }
                       }}
                     >
-                      <Users className="h-4 w-4 mr-2" />
-                      Refresh
-                    </Button>
-                    <Button 
-                      variant="outline" 
-                      size="sm"
-                      onClick={() => {
-                        setGameStatus("setup");
-                        setCurrentStep(1);
-                      }}
-                    >
-                      <Gift className="h-4 w-4 mr-2" />
-                      Edit Gifts
+                      <Users className="h-4 w-4" />
                     </Button>
                   </div>
                 </div>
-                <ScrollArea className="h-[300px]">
+              </CardHeader>
+              <CardContent>
+                <ScrollArea className="h-[400px]">
                   <div className="space-y-2">
                     {players.length === 0 ? (
-                      <div className="text-center py-8 text-muted-foreground">
-                        <Users className="h-12 w-12 mx-auto mb-2 opacity-50" />
-                        <p>No players have joined yet</p>
+                      <div className="text-center py-12 text-muted-foreground">
+                        <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-muted flex items-center justify-center">
+                          <Users className="h-8 w-8 opacity-50" />
+                        </div>
+                        <p className="font-medium">No players have joined yet</p>
                         <p className="text-sm">Share the code above to invite players</p>
                       </div>
                     ) : (
-                      players.map((player) => (
+                      players.map((player, index) => (
                         <div
                           key={player.id}
-                          className="flex items-center justify-between p-3 bg-card rounded-lg border"
+                          className="flex items-center justify-between p-4 bg-card rounded-lg border hover:border-primary/50 transition-colors"
                         >
-                          <div className="flex items-center gap-3">
-                            <Avatar>
-                              <AvatarImage
-                                src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${player.avatarSeed || player.displayName}`}
-                              />
-                              <AvatarFallback>
-                                {player.displayName.substring(0, 2).toUpperCase()}
-                              </AvatarFallback>
-                            </Avatar>
+                          <div className="flex items-center gap-4">
+                            <div className="relative">
+                              <Avatar className="h-12 w-12">
+                                <AvatarImage
+                                  src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${player.avatarSeed || player.displayName}`}
+                                />
+                                <AvatarFallback className="bg-primary/10 text-primary font-bold">
+                                  {player.displayName.substring(0, 2).toUpperCase()}
+                                </AvatarFallback>
+                              </Avatar>
+                              <div className="absolute -bottom-1 -right-1 w-6 h-6 rounded-full bg-primary text-primary-foreground text-xs font-bold flex items-center justify-center">
+                                {index + 1}
+                              </div>
+                            </div>
                             <div>
                               <div className="flex items-center gap-2">
-                                <p className="font-medium">{player.displayName}</p>
+                                <p className="font-semibold text-lg">{player.displayName}</p>
                                 {player.isAdmin && (
-                                  <Badge variant="outline">Admin</Badge>
+                                  <Badge variant="outline" className="text-xs">Admin</Badge>
                                 )}
                               </div>
-                              <p className="text-xs text-muted-foreground">
-                                Joined{" "}
-                                {new Date(player.joinTime).toLocaleTimeString()}
+                              <p className="text-sm text-muted-foreground">
+                                Joined {new Date(player.joinTime).toLocaleTimeString()}
                               </p>
                             </div>
                           </div>
-                          <Badge variant="secondary">#{player.orderIndex}</Badge>
+                          <Badge variant="secondary" className="text-sm">
+                            Turn #{player.orderIndex}
+                          </Badge>
                         </div>
                       ))
                     )}
                   </div>
                 </ScrollArea>
-              </div>
+              </CardContent>
+            </Card>
 
-              <div className="flex gap-3">
+            {/* Start Game Button */}
+            <Card className={players.length >= 2 ? "border-green-500 bg-green-50 dark:bg-green-950/20" : ""}>
+              <CardContent className="p-6">
+                <div className="flex items-center justify-between gap-4">
+                  <div>
+                    <h3 className="font-semibold text-lg">
+                      {players.length >= 2 ? "Ready to Start!" : "Waiting for Players"}
+                    </h3>
+                    <p className="text-sm text-muted-foreground">
+                      {players.length >= 2 
+                        ? `${players.length} players are ready. Click to release everyone into the game!`
+                        : `Need at least 2 players to start (${players.length}/2)`
+                      }
+                    </p>
+                  </div>
+                  <Button
+                    onClick={handleStartGame}
+                    disabled={players.length < 2}
+                    size="lg"
+                    className="px-8 py-6 text-lg"
+                  >
+                    <Play className="h-6 w-6 mr-2" />
+                    Start Game
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Right Column - Settings & Controls */}
+          <div className="space-y-6">
+            {/* Presentation View */}
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-base flex items-center gap-2">
+                  <Monitor className="h-4 w-4" />
+                  Presentation View
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <p className="text-sm text-muted-foreground">
+                  Open the presentation view on a big screen for everyone to see the game board.
+                </p>
                 <Button
+                  onClick={() => {
+                    const presentationUrl = `${window.location.origin}/presentation/${sessionCode}`;
+                    window.open(presentationUrl, '_blank', 'width=1920,height=1080');
+                  }}
                   variant="outline"
+                  className="w-full"
+                >
+                  <ExternalLink className="h-4 w-4 mr-2" />
+                  Open Presentation
+                </Button>
+              </CardContent>
+            </Card>
+
+            {/* Game Settings */}
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-base flex items-center gap-2">
+                  <Settings className="h-4 w-4" />
+                  Game Settings
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="lobby-max-steals" className="text-sm">Max Steals Per Gift</Label>
+                  <Input
+                    id="lobby-max-steals"
+                    type="number"
+                    value={gameConfig.maxStealsPerGift}
+                    onChange={async (e) => {
+                      const value = parseInt(e.target.value);
+                      setGameConfig({ ...gameConfig, maxStealsPerGift: value });
+                      if (gameState.sessionId) {
+                        await updateGameConfigAsync({ maxStealsPerGift: value });
+                      }
+                    }}
+                    min="1"
+                    max="5"
+                    className="h-9"
+                  />
+                </div>
+
+                <div className="flex items-center justify-between">
+                  <Label htmlFor="lobby-randomize" className="text-sm">Randomize Order</Label>
+                  <Switch
+                    id="lobby-randomize"
+                    checked={gameConfig.randomizeOrder}
+                    onCheckedChange={async (checked) => {
+                      setGameConfig({ ...gameConfig, randomizeOrder: checked });
+                      if (gameState.sessionId) {
+                        await updateGameConfigAsync({ randomizeOrder: checked });
+                      }
+                    }}
+                  />
+                </div>
+
+                <div className="flex items-center justify-between">
+                  <Label htmlFor="lobby-stealback" className="text-sm">Allow Steal-back</Label>
+                  <Switch
+                    id="lobby-stealback"
+                    checked={gameConfig.allowImmediateStealback}
+                    onCheckedChange={async (checked) => {
+                      setGameConfig({ ...gameConfig, allowImmediateStealback: checked });
+                      if (gameState.sessionId) {
+                        await updateGameConfigAsync({ allowImmediateStealback: checked });
+                      }
+                    }}
+                  />
+                </div>
+
+                <Separator />
+
+                <div className="flex items-center justify-between">
+                  <Label htmlFor="lobby-timer" className="text-sm">Turn Timer</Label>
+                  <Switch
+                    id="lobby-timer"
+                    checked={gameConfig.turnTimerEnabled}
+                    onCheckedChange={async (checked) => {
+                      setGameConfig({ ...gameConfig, turnTimerEnabled: checked });
+                      if (gameState.sessionId) {
+                        await updateGameConfigAsync({ turnTimerEnabled: checked });
+                      }
+                    }}
+                  />
+                </div>
+
+                {gameConfig.turnTimerEnabled && (
+                  <div className="flex items-center gap-2">
+                    <Input
+                      type="number"
+                      min="10"
+                      max="300"
+                      value={gameConfig.turnTimerSeconds}
+                      onChange={async (e) => {
+                        const value = parseInt(e.target.value) || 60;
+                        setGameConfig({ ...gameConfig, turnTimerSeconds: value });
+                        if (gameState.sessionId) {
+                          await updateGameConfigAsync({ turnTimerSeconds: value });
+                        }
+                      }}
+                      className="w-20 h-9"
+                    />
+                    <span className="text-sm text-muted-foreground">seconds</span>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* Quick Actions */}
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-base">Quick Actions</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-2">
+                <Button 
+                  variant="outline" 
+                  className="w-full justify-start"
                   onClick={() => {
                     setGameStatus("setup");
-                    setCurrentStep(2);
+                    setCurrentStep(1);
                   }}
-                  className="flex-1"
                 >
-                  <ChevronLeft className="h-4 w-4 mr-2" />
+                  <Gift className="h-4 w-4 mr-2" />
+                  Edit Gifts ({gifts.length})
+                </Button>
+                <Button 
+                  variant="outline" 
+                  className="w-full justify-start"
+                  onClick={() => {
+                    setGameStatus("setup");
+                    setCurrentStep(0);
+                  }}
+                >
+                  <Settings className="h-4 w-4 mr-2" />
                   Back to Setup
                 </Button>
-                <Button
-                  onClick={handleStartGame}
-                  disabled={players.length < 2}
-                  className="flex-1"
-                  size="lg"
-                >
-                  <Play className="h-5 w-5 mr-2" />
-                  Start Game ({players.length}/2+ players)
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
+              </CardContent>
+            </Card>
+
+            {/* Game Summary */}
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-base">Game Summary</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-2 text-sm">
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Players</span>
+                    <span className="font-medium">{players.length}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Gifts</span>
+                    <span className="font-medium">{gifts.length}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Max Steals</span>
+                    <span className="font-medium">{gameConfig.maxStealsPerGift}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Timer</span>
+                    <span className="font-medium">
+                      {gameConfig.turnTimerEnabled ? `${gameConfig.turnTimerSeconds}s` : "Off"}
+                    </span>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
         </div>
       ) : (
         // Existing tabs for active game management
@@ -1594,34 +1785,6 @@ const AdminDashboard = () => {
                         </Button>
                       </div>
                     </div>
-
-                    <Dialog open={showQrCode} onOpenChange={setShowQrCode}>
-                      <DialogContent className="sm:max-w-md">
-                        <DialogHeader>
-                          <DialogTitle>QR Code Invite</DialogTitle>
-                          <DialogDescription>
-                            Players can scan this QR code to join the game
-                          </DialogDescription>
-                        </DialogHeader>
-                        <div className="flex flex-col items-center space-y-4">
-                          {qrCodeUrl && (
-                            <img 
-                              src={qrCodeUrl} 
-                              alt="QR Code for game invite" 
-                              className="border rounded-lg"
-                            />
-                          )}
-                          <div className="text-center">
-                            <p className="text-sm text-muted-foreground mb-2">Game Code:</p>
-                            <p className="text-2xl font-bold">{sessionCode}</p>
-                          </div>
-                          <Button onClick={handleCopyLink} className="w-full">
-                            <Copy className="h-4 w-4 mr-2" />
-                            Copy Invite Link
-                          </Button>
-                        </div>
-                      </DialogContent>
-                    </Dialog>
 
                     <div className="grid grid-cols-2 gap-4">
                       <div className="text-center">

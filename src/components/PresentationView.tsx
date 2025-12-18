@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef, useCallback } from 'react';
-import { useParams } from 'react-router-dom';
+import { useParams, useNavigate } from 'react-router-dom';
 import { supabase } from '@/lib/supabase';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -60,11 +60,13 @@ const STEAL_PHRASES = [
 
 export default function PresentationView() {
   const { sessionCode } = useParams<{ sessionCode: string }>();
+  const navigate = useNavigate();
   const [gifts, setGifts] = useState<Gift[]>([]);
   const [players, setPlayers] = useState<Player[]>([]);
   const [session, setSession] = useState<Session | null>(null);
   const [revealedGiftId, setRevealedGiftId] = useState<string | null>(null);
   const [stealAnimation, setStealAnimation] = useState<StealAnimation | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
   
   // Timer state
   const [timeRemaining, setTimeRemaining] = useState<number | null>(null);
@@ -120,42 +122,52 @@ export default function PresentationView() {
   }, [timeRemaining, session?.game_status]);
 
   useEffect(() => {
-    if (!sessionCode) return;
+    if (!sessionCode) {
+      navigate('/join');
+      return;
+    }
 
     const fetchData = async () => {
+      setIsLoading(true);
       // Fetch session
-      const { data: sessionData } = await supabase
+      const { data: sessionData, error } = await supabase
         .from('game_sessions')
         .select('*')
         .eq('session_code', sessionCode)
         .single();
 
-      if (sessionData) {
-        setSession(sessionData);
-
-        // Fetch gifts
-        const { data: giftsData } = await supabase
-          .from('gifts')
-          .select('*')
-          .eq('session_id', sessionData.id)
-          .order('position', { nullsFirst: false })
-          .order('created_at');
-
-        if (giftsData) {
-          console.log('PresentationView - Gifts loaded:', giftsData);
-          console.log('PresentationView - Gift statuses:', giftsData.map(g => ({ name: g.name, status: g.status })));
-          setGifts(giftsData);
-        }
-
-        // Fetch players
-        const { data: playersData } = await supabase
-          .from('players')
-          .select('*')
-          .eq('session_id', sessionData.id)
-          .order('order_index');
-
-        if (playersData) setPlayers(playersData);
+      if (error || !sessionData) {
+        // Session doesn't exist - redirect to join page (will check for stored session)
+        navigate(`/join`, { replace: true });
+        return;
       }
+
+      setSession(sessionData);
+
+      // Fetch gifts
+      const { data: giftsData } = await supabase
+        .from('gifts')
+        .select('*')
+        .eq('session_id', sessionData.id)
+        .order('position', { nullsFirst: false })
+        .order('created_at');
+
+      if (giftsData) {
+        console.log('PresentationView - Gifts loaded:', giftsData);
+        console.log('PresentationView - Gift statuses:', giftsData.map(g => ({ name: g.name, status: g.status })));
+        setGifts(giftsData);
+      }
+
+      // Fetch players
+      const { data: playersData } = await supabase
+        .from('players')
+        .select('*')
+        .eq('session_id', sessionData.id)
+        .order('order_index');
+
+      if (playersData) setPlayers(playersData);
+      
+      setIsLoading(false);
     };
 
     fetchData();
@@ -318,6 +330,23 @@ export default function PresentationView() {
   };
 
   const gridLayout = getGridLayout();
+
+  // Show loading state while fetching session
+  if (isLoading) {
+    return (
+      <div className="h-screen bg-gradient-to-br from-red-50 via-green-50 to-blue-50 flex items-center justify-center">
+        <div className="text-center">
+          <div className="h-8 w-8 animate-spin rounded-full border-4 border-green-600 border-t-transparent mx-auto mb-4"></div>
+          <p className="text-gray-600">Loading game session...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // If no session found, this will have already redirected via useEffect
+  if (!session) {
+    return null;
+  }
 
   // If game has ended, show results screen with game board
   if (session?.game_status === 'ended') {
@@ -502,6 +531,37 @@ export default function PresentationView() {
           </div>
         )}
       </div>
+
+      {/* Large Turn Banner - More Prominent */}
+      {session?.game_status === 'active' && currentPlayer && (
+        <div className="flex-shrink-0 mb-4">
+          <Card className="bg-gradient-to-r from-green-500 via-emerald-500 to-teal-500 border-4 border-white shadow-2xl animate-pulse">
+            <CardContent className="p-8 text-center">
+              <div className="flex items-center justify-center gap-4">
+                <Avatar className="h-16 w-16 border-4 border-white shadow-lg">
+                  <AvatarImage 
+                    src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${currentPlayer.avatar_seed || currentPlayer.display_name}`}
+                  />
+                  <AvatarFallback className="text-2xl font-bold bg-white text-green-600">
+                    {getInitials(currentPlayer.display_name)}
+                  </AvatarFallback>
+                </Avatar>
+                <div className="text-left">
+                  <p className="text-white/90 text-lg font-medium">Current Turn:</p>
+                  <h2 className="text-4xl font-bold text-white drop-shadow-lg">
+                    {currentPlayer.display_name}
+                  </h2>
+                </div>
+                {session?.is_final_round && (
+                  <Badge className="ml-4 text-lg px-4 py-2 bg-amber-500 text-white font-bold">
+                    🏆 FINAL ROUND
+                  </Badge>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
 
       {/* Gifts Grid - Dynamically sized to fit all on screen */}
       <div className="flex-1 flex items-center justify-center overflow-hidden">
