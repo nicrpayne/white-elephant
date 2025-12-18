@@ -348,9 +348,14 @@ const GameBoard = ({ isAdmin: isAdminProp }: GameBoardProps = {}) => {
 
   // Play jingle sound for gift picking
   const playJingleSound = useCallback(() => {
-    if (soundVolume === 0) return;
+    console.log('🎵 playJingleSound called, soundVolume:', soundVolume);
+    if (soundVolume === 0) {
+      console.log('🎵 Sound volume is 0, skipping');
+      return;
+    }
     try {
       const audioContext = new (window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext)();
+      console.log('🎵 AudioContext state:', audioContext.state);
       const gainNode = audioContext.createGain();
       gainNode.connect(audioContext.destination);
       gainNode.gain.setValueAtTime(0.3 * soundVolume, audioContext.currentTime);
@@ -380,9 +385,14 @@ const GameBoard = ({ isAdmin: isAdminProp }: GameBoardProps = {}) => {
 
   // Play sneaky steal sound
   const playStealSound = useCallback(() => {
-    if (soundVolume === 0) return;
+    console.log('🎭 playStealSound called, soundVolume:', soundVolume);
+    if (soundVolume === 0) {
+      console.log('🎭 Sound volume is 0, skipping');
+      return;
+    }
     try {
       const audioContext = new (window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext)();
+      console.log('🎭 AudioContext state:', audioContext.state);
       const gainNode = audioContext.createGain();
       gainNode.connect(audioContext.destination);
       gainNode.gain.setValueAtTime(0.25 * soundVolume, audioContext.currentTime);
@@ -412,6 +422,7 @@ const GameBoard = ({ isAdmin: isAdminProp }: GameBoardProps = {}) => {
 
   // Listen for gift picked sound events (from realtime subscription)
   useEffect(() => {
+    console.log('🎵 Setting up giftPickedSound listener');
     const handleGiftPickedSound = () => {
       console.log('🎵 Received giftPickedSound event, playing jingle');
       playJingleSound();
@@ -419,12 +430,14 @@ const GameBoard = ({ isAdmin: isAdminProp }: GameBoardProps = {}) => {
 
     window.addEventListener('giftPickedSound', handleGiftPickedSound as EventListener);
     return () => {
+      console.log('🎵 Removing giftPickedSound listener');
       window.removeEventListener('giftPickedSound', handleGiftPickedSound as EventListener);
     };
   }, [playJingleSound]);
 
   // Listen for gift stolen sound events (from realtime subscription)
   useEffect(() => {
+    console.log('🎭 Setting up giftStolenSound listener');
     const handleGiftStolenSound = () => {
       console.log('🎭 Received giftStolenSound event, playing steal sound');
       playStealSound();
@@ -432,6 +445,7 @@ const GameBoard = ({ isAdmin: isAdminProp }: GameBoardProps = {}) => {
 
     window.addEventListener('giftStolenSound', handleGiftStolenSound as EventListener);
     return () => {
+      console.log('🎭 Removing giftStolenSound listener');
       window.removeEventListener('giftStolenSound', handleGiftStolenSound as EventListener);
     };
   }, [playStealSound]);

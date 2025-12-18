@@ -955,6 +955,7 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
         .eq('id', giftId);
 
       // Play jingle sound for gift picking
+      console.log('🎵 pickGift: Dispatching giftPickedSound event for gift:', giftId);
       window.dispatchEvent(new CustomEvent('giftPickedSound', { detail: { giftId } }));
 
       // Update player's current gift
@@ -1125,6 +1126,7 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
         .eq('id', giftId);
 
       // Play steal sound
+      console.log('🎭 stealGift: Dispatching giftStolenSound event for gift:', giftId);
       window.dispatchEvent(new CustomEvent('giftStolenSound', { detail: { giftId } }));
 
       // If stealer had a gift, transfer it to the victim (swap)

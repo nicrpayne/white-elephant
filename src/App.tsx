@@ -6,7 +6,6 @@ import GameBoard from "./components/GameBoard";
 import JoinGame from "./components/JoinGame";
 import PresentationView from "./components/PresentationView";
 import { Toaster } from "@/components/ui/toaster";
-import routes from "tempo-routes";
 
 function App() {
   return (
@@ -22,7 +21,6 @@ function App() {
           {/* Catch-all route - redirect to join (which will check for active session) */}
           <Route path="*" element={<Navigate to="/join" replace />} />
         </Routes>
-        {import.meta.env.VITE_TEMPO === "true" && useRoutes(routes)}
         <Toaster />
       </>
     </Suspense>

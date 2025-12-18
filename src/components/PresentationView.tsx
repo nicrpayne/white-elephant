@@ -9,6 +9,7 @@ import { getSoundVolume, setSoundVolume } from '@/lib/sessionStorage';
 
 interface Gift {
   id: string;
+  session_id: string;
   name: string;
   image_url: string;
   status: string;
@@ -26,6 +27,7 @@ interface Player {
 }
 
 interface Session {
+  id: string;
   game_status: string;
   active_player_id: string | null;
   is_final_round: boolean | null;
@@ -77,19 +79,28 @@ export default function PresentationView() {
   // Refs for subscription callbacks
   const stealAnimationRef = useRef<StealAnimation | null>(null);
   const sessionRef = useRef<Session | null>(null);
+  const sessionIdRef = useRef<string | null>(null);
   
   // Keep refs in sync with state
   stealAnimationRef.current = stealAnimation;
   sessionRef.current = session;
+  if (session?.id) {
+    sessionIdRef.current = session.id;
+  }
   
   // Sound volume state
   const [soundVolume, setSoundVolumeState] = useState<number>(getSoundVolume);
 
   // Play jingle sound for gift picking
   const playJingleSound = useCallback(() => {
-    if (soundVolume === 0) return;
+    console.log('🎵 PresentationView playJingleSound called, soundVolume:', soundVolume);
+    if (soundVolume === 0) {
+      console.log('🎵 Sound volume is 0, skipping');
+      return;
+    }
     try {
       const audioContext = new (window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext)();
+      console.log('🎵 AudioContext state:', audioContext.state);
       const gainNode = audioContext.createGain();
       gainNode.connect(audioContext.destination);
       gainNode.gain.setValueAtTime(0.4 * soundVolume, audioContext.currentTime);
@@ -119,9 +130,14 @@ export default function PresentationView() {
 
   // Play sneaky steal sound
   const playStealSound = useCallback(() => {
-    if (soundVolume === 0) return;
+    console.log('🎭 PresentationView playStealSound called, soundVolume:', soundVolume);
+    if (soundVolume === 0) {
+      console.log('🎭 Sound volume is 0, skipping');
+      return;
+    }
     try {
       const audioContext = new (window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext)();
+      console.log('🎭 AudioContext state:', audioContext.state);
       const gainNode = audioContext.createGain();
       gainNode.connect(audioContext.destination);
       gainNode.gain.setValueAtTime(0.35 * soundVolume, audioContext.currentTime);
@@ -219,6 +235,8 @@ export default function PresentationView() {
       }
 
       setSession(sessionData);
+      sessionIdRef.current = sessionData.id;
+      console.log('🎮 Session loaded, ID:', sessionData.id);
 
       // Fetch gifts
       const { data: giftsData } = await supabase
@@ -260,8 +278,10 @@ export default function PresentationView() {
         },
         async (payload) => {
           const action = payload.new as any;
+          console.log('🎭 game_actions INSERT received:', action);
           
           if (action.action_type === 'steal') {
+            console.log('🎭 Processing steal action');
             // Fetch all current data to get names
             const { data: sessionData } = await supabase
               .from('game_sessions')
@@ -317,7 +337,8 @@ export default function PresentationView() {
             const updatedGift = payload.new as Gift;
             
             // Only process updates for gifts in this session
-            if (updatedGift.session_id !== sessionRef.current?.id) {
+            if (updatedGift.session_id !== sessionIdRef.current) {
+              console.log('🎁 Gift update ignored - different session:', updatedGift.session_id, 'vs', sessionIdRef.current);
               return;
             }
             
@@ -326,10 +347,19 @@ export default function PresentationView() {
               const oldGift = prev.find(g => g.id === updatedGift.id);
               const wasHidden = oldGift?.status === 'hidden';
               
+              console.log('🎁 Gift update in PresentationView:', {
+                giftId: updatedGift.id,
+                wasHidden,
+                newStatus: updatedGift.status,
+                stealAnimationActive: !!stealAnimationRef.current,
+                gameStatus: sessionRef.current?.game_status
+              });
+              
               // Trigger reveal animation and jingle only if gift was just revealed from hidden (not stolen)
               // Steals have their own animation and sound via game_actions subscription
               // Don't show reveal animation if game has ended
               if (wasHidden && updatedGift.status === 'revealed' && !stealAnimationRef.current && sessionRef.current?.game_status !== 'ended') {
+                console.log('🎵 Triggering jingle for revealed gift');
                 setRevealedGiftId(updatedGift.id);
                 playJingleSound(); // Play jingle when gift is picked/revealed
                 setTimeout(() => setRevealedGiftId(null), 5000);
