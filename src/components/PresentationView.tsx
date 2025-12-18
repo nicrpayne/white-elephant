@@ -5,6 +5,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Gift, User, Clock } from 'lucide-react';
+import { getSoundVolume, setSoundVolume } from '@/lib/sessionStorage';
 
 interface Gift {
   id: string;
@@ -72,6 +73,81 @@ export default function PresentationView() {
   const [timeRemaining, setTimeRemaining] = useState<number | null>(null);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   const lastActivePlayerRef = useRef<string | null>(null);
+  
+  // Refs for subscription callbacks
+  const stealAnimationRef = useRef<StealAnimation | null>(null);
+  const sessionRef = useRef<Session | null>(null);
+  
+  // Keep refs in sync with state
+  stealAnimationRef.current = stealAnimation;
+  sessionRef.current = session;
+  
+  // Sound volume state
+  const [soundVolume, setSoundVolumeState] = useState<number>(getSoundVolume);
+
+  // Play jingle sound for gift picking
+  const playJingleSound = useCallback(() => {
+    if (soundVolume === 0) return;
+    try {
+      const audioContext = new (window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext)();
+      const gainNode = audioContext.createGain();
+      gainNode.connect(audioContext.destination);
+      gainNode.gain.setValueAtTime(0.4 * soundVolume, audioContext.currentTime);
+      
+      // Jingle bell melody - cheerful ascending notes
+      const notes = [523.25, 659.25, 783.99, 1046.50]; // C5, E5, G5, C6
+      const durations = [0.15, 0.15, 0.15, 0.3];
+      let time = audioContext.currentTime;
+      
+      notes.forEach((freq, i) => {
+        const osc = audioContext.createOscillator();
+        const noteGain = audioContext.createGain();
+        osc.connect(noteGain);
+        noteGain.connect(gainNode);
+        osc.frequency.value = freq;
+        osc.type = 'triangle';
+        noteGain.gain.setValueAtTime(0.5 * soundVolume, time);
+        noteGain.gain.exponentialRampToValueAtTime(0.01, time + durations[i]);
+        osc.start(time);
+        osc.stop(time + durations[i]);
+        time += durations[i] * 0.8;
+      });
+    } catch (e) {
+      console.log('Jingle sound not available');
+    }
+  }, [soundVolume]);
+
+  // Play sneaky steal sound
+  const playStealSound = useCallback(() => {
+    if (soundVolume === 0) return;
+    try {
+      const audioContext = new (window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext)();
+      const gainNode = audioContext.createGain();
+      gainNode.connect(audioContext.destination);
+      gainNode.gain.setValueAtTime(0.35 * soundVolume, audioContext.currentTime);
+      
+      // Sneaky descending "dun dun dunnnn" sound
+      const notes = [392, 349.23, 261.63]; // G4, F4, C4 - dramatic descending
+      const durations = [0.2, 0.2, 0.5];
+      let time = audioContext.currentTime;
+      
+      notes.forEach((freq, i) => {
+        const osc = audioContext.createOscillator();
+        const noteGain = audioContext.createGain();
+        osc.connect(noteGain);
+        noteGain.connect(gainNode);
+        osc.frequency.value = freq;
+        osc.type = 'sawtooth';
+        noteGain.gain.setValueAtTime(0.4 * soundVolume, time);
+        noteGain.gain.exponentialRampToValueAtTime(0.01, time + durations[i]);
+        osc.start(time);
+        osc.stop(time + durations[i]);
+        time += durations[i] * 0.9;
+      });
+    } catch (e) {
+      console.log('Steal sound not available');
+    }
+  }, [soundVolume]);
   
   // Format time for display
   const formatTime = useCallback((seconds: number) => {
@@ -215,6 +291,8 @@ export default function PresentationView() {
                     phrase: randomPhrase,
                   });
 
+                  playStealSound(); // Play dramatic steal sound
+
                   setTimeout(() => setStealAnimation(null), 4000);
                 }
               }
@@ -237,15 +315,28 @@ export default function PresentationView() {
         (payload) => {
           if (payload.eventType === 'UPDATE') {
             const updatedGift = payload.new as Gift;
-            setGifts((prev) =>
-              prev.map((g) => (g.id === updatedGift.id ? updatedGift : g))
-            );
-
-            // Trigger reveal animation if gift was just revealed (but not stolen - steal has its own animation)
-            if (updatedGift.status === 'revealed' && !stealAnimation) {
-              setRevealedGiftId(updatedGift.id);
-              setTimeout(() => setRevealedGiftId(null), 5000);
+            
+            // Only process updates for gifts in this session
+            if (updatedGift.session_id !== sessionRef.current?.id) {
+              return;
             }
+            
+            setGifts((prev) => {
+              // Find the old gift status from current state
+              const oldGift = prev.find(g => g.id === updatedGift.id);
+              const wasHidden = oldGift?.status === 'hidden';
+              
+              // Trigger reveal animation and jingle only if gift was just revealed from hidden (not stolen)
+              // Steals have their own animation and sound via game_actions subscription
+              // Don't show reveal animation if game has ended
+              if (wasHidden && updatedGift.status === 'revealed' && !stealAnimationRef.current && sessionRef.current?.game_status !== 'ended') {
+                setRevealedGiftId(updatedGift.id);
+                playJingleSound(); // Play jingle when gift is picked/revealed
+                setTimeout(() => setRevealedGiftId(null), 5000);
+              }
+              
+              return prev.map((g) => (g.id === updatedGift.id ? updatedGift : g));
+            });
           }
         }
       )
@@ -291,7 +382,7 @@ export default function PresentationView() {
       sessionChannel.unsubscribe();
       playersChannel.unsubscribe();
     };
-  }, [sessionCode, stealAnimation]);
+  }, [sessionCode]);
 
   // Generate initials from name
   const getInitials = (name: string) => {
@@ -443,7 +534,7 @@ export default function PresentationView() {
                       gridTemplateRows: `repeat(${gridLayout.rows}, minmax(0, 1fr))`
                     }}
                   >
-                    {gifts.map((gift) => {
+                    {gifts.filter(gift => gift.status !== 'hidden').map((gift) => {
                       const owner = players.find((p) => p.id === gift.current_owner_id);
                       const isLocked = gift.status === 'locked' || gift.steal_count >= 2;
 

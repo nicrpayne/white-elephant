@@ -2,6 +2,33 @@
 // Stores session data in localStorage to allow users to return after browser refresh
 
 const STORAGE_KEY = 'white_elephant_session';
+const VOLUME_KEY = 'white_elephant_sound_volume';
+
+// Default volume (0-1 scale)
+const DEFAULT_VOLUME = 0.5;
+
+/**
+ * Get the stored sound volume (0-1 scale)
+ */
+export const getSoundVolume = (): number => {
+  try {
+    const stored = localStorage.getItem(VOLUME_KEY);
+    if (stored === null) return DEFAULT_VOLUME;
+    const volume = parseFloat(stored);
+    if (isNaN(volume) || volume < 0 || volume > 1) return DEFAULT_VOLUME;
+    return volume;
+  } catch {
+    return DEFAULT_VOLUME;
+  }
+};
+
+/**
+ * Set the sound volume (0-1 scale)
+ */
+export const setSoundVolume = (volume: number): void => {
+  const clampedVolume = Math.max(0, Math.min(1, volume));
+  localStorage.setItem(VOLUME_KEY, clampedVolume.toString());
+};
 
 export interface StoredSession {
   sessionId: string;

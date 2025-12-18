@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, ReactNode } from "react";
+import React, { createContext, useContext, useState, useEffect, useRef, ReactNode } from "react";
 import { supabase, DBGameSession, DBPlayer, DBGift } from "@/lib/supabase";
 import { RealtimeChannel } from "@supabase/supabase-js";
 import { storeSession, getStoredSession, clearStoredSession, refreshSessionTimestamp } from "@/lib/sessionStorage";
@@ -64,6 +64,7 @@ interface GameContextType {
   createSession: () => Promise<string>;
   joinSession: (sessionCode: string, displayName: string) => Promise<string>;
   restoreSession: () => Promise<{ restored: boolean; sessionCode?: string; playerId?: string; isAdmin?: boolean }>;
+  restoreSessionFromUrl: (sessionCode: string, playerId: string) => Promise<{ restored: boolean; sessionCode?: string; playerId?: string }>;
   clearSession: () => void;
   getStoredSessionInfo: () => { sessionCode: string; playerId: string | null; isAdmin: boolean } | null;
   addGift: (gift: Omit<Gift, 'id' | 'status' | 'stealCount' | 'currentOwnerId'>) => Promise<void>;
@@ -83,7 +84,7 @@ interface GameContextType {
   setRoundIndex: (round: number) => void;
   setGameConfig: (config: GameConfig) => void;
   addPlayer: (player: Player) => void;
-  removePlayer: (playerId: string) => void;
+  removePlayer: (playerId: string) => Promise<void>;
   loadPlayers: (sessionId: string) => Promise<void>;
   loadGifts: (sessionId: string) => Promise<void>;
 }
@@ -112,6 +113,9 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
 
   const [isLoading, setIsLoading] = useState(true); // Start as true to handle initial session check
   const [realtimeChannel, setRealtimeChannel] = useState<RealtimeChannel | null>(null);
+  
+  // Track previous gift states to detect changes
+  const previousGiftsRef = useRef<Map<string, { status: string; ownerId: string | null }>>(new Map());
 
   // Subscribe to real-time updates when sessionId changes
   useEffect(() => {
@@ -147,6 +151,42 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
         },
         (payload) => {
           console.log('Gifts table changed:', payload);
+          
+          // Check if a gift was just revealed (picked) or stolen
+          if (payload.eventType === 'UPDATE') {
+            const newGift = payload.new as DBGift;
+            
+            // Get previous state from our ref
+            const prevState = previousGiftsRef.current.get(newGift.id);
+            
+            console.log('Gift update - prev:', prevState, 'new:', { status: newGift.status, ownerId: newGift.current_owner_id });
+            
+            // Gift was just revealed (picked from hidden)
+            if (prevState && prevState.status === 'hidden' && newGift.status === 'revealed') {
+              console.log('🎵 Dispatching giftPickedSound event');
+              window.dispatchEvent(new CustomEvent('giftPickedSound', { 
+                detail: { giftId: newGift.id } 
+              }));
+            }
+            
+            // Gift was stolen (owner changed on a revealed gift)
+            if (prevState && newGift.status === 'revealed' && 
+                prevState.ownerId && 
+                newGift.current_owner_id && 
+                prevState.ownerId !== newGift.current_owner_id) {
+              console.log('🎭 Dispatching giftStolenSound event');
+              window.dispatchEvent(new CustomEvent('giftStolenSound', { 
+                detail: { giftId: newGift.id } 
+              }));
+            }
+            
+            // Update previous state
+            previousGiftsRef.current.set(newGift.id, {
+              status: newGift.status,
+              ownerId: newGift.current_owner_id
+            });
+          }
+          
           loadGifts(gameState.sessionId!).catch(err => 
             console.error('Error loading gifts after change:', err)
           );
@@ -287,6 +327,15 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
       });
       console.log('Mapped gifts array:', gifts);
       console.log('Setting gifts in state:', gifts);
+      
+      // Update previous gifts ref for sound detection
+      gifts.forEach(gift => {
+        previousGiftsRef.current.set(gift.id, {
+          status: gift.status,
+          ownerId: gift.currentOwnerId
+        });
+      });
+      
       setGameState(prev => ({ ...prev, gifts }));
     } else if (error) {
       console.error('Error loading gifts:', error);
@@ -503,6 +552,83 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
     } catch (error) {
       console.error('Error restoring session:', error);
       clearStoredSession();
+      return { restored: false };
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Restore session from URL parameters (sessionCode + playerId)
+  // This is used when a player refreshes and has URL params but no localStorage
+  const restoreSessionFromUrl = async (sessionCode: string, playerId: string): Promise<{ restored: boolean; sessionCode?: string; playerId?: string }> => {
+    setIsLoading(true);
+    try {
+      console.log('Attempting to restore session from URL:', { sessionCode, playerId });
+      
+      // Find session by code
+      const { data: sessionData, error: sessionError } = await supabase
+        .from('game_sessions')
+        .select('*')
+        .eq('session_code', sessionCode.toUpperCase())
+        .single();
+
+      if (sessionError || !sessionData) {
+        console.log('Session not found for code:', sessionCode);
+        return { restored: false };
+      }
+
+      const session = sessionData as DBGameSession;
+
+      // Check if session has ended
+      if (session.game_status === 'ended') {
+        console.log('Session has ended');
+        return { restored: false };
+      }
+
+      // Verify player exists in this session
+      const { data: playerData, error: playerError } = await supabase
+        .from('players')
+        .select('*')
+        .eq('id', playerId)
+        .eq('session_id', session.id)
+        .single();
+
+      if (playerError || !playerData) {
+        console.log('Player not found in session:', playerId);
+        return { restored: false };
+      }
+
+      const player = playerData as DBPlayer;
+
+      // Session and player are valid, load everything
+      setGameState(prev => ({
+        ...prev,
+        sessionId: session.id,
+        sessionCode: session.session_code,
+        currentPlayerId: playerId,
+      }));
+
+      await loadSession(session.id);
+      await loadPlayers(session.id);
+      await loadGifts(session.id);
+
+      // Store session in localStorage for future refreshes
+      storeSession({
+        sessionId: session.id,
+        sessionCode: session.session_code,
+        playerId: playerId,
+        isAdmin: player.is_admin ?? false,
+        displayName: player.display_name,
+      });
+
+      console.log('Session restored from URL successfully');
+      return { 
+        restored: true, 
+        sessionCode: session.session_code,
+        playerId: playerId,
+      };
+    } catch (error) {
+      console.error('Error restoring session from URL:', error);
       return { restored: false };
     } finally {
       setIsLoading(false);
@@ -828,6 +954,9 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
         })
         .eq('id', giftId);
 
+      // Play jingle sound for gift picking
+      window.dispatchEvent(new CustomEvent('giftPickedSound', { detail: { giftId } }));
+
       // Update player's current gift
       await supabase
         .from('players')
@@ -995,6 +1124,9 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
         })
         .eq('id', giftId);
 
+      // Play steal sound
+      window.dispatchEvent(new CustomEvent('giftStolenSound', { detail: { giftId } }));
+
       // If stealer had a gift, transfer it to the victim (swap)
       if (stealerCurrentGiftId && stealerCurrentGift) {
         console.log('Final round swap: transferring gift', stealerCurrentGiftId, 'to victim', previousOwnerId);
@@ -1099,7 +1231,69 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
   const setRoundIndex = (round: number) => setGameState(prev => ({ ...prev, roundIndex: round }));
   const setGameConfig = (config: GameConfig) => setGameState(prev => ({ ...prev, gameConfig: config }));
   const addPlayer = (player: Player) => setGameState(prev => ({ ...prev, players: [...prev.players, player] }));
-  const removePlayer = (playerId: string) => setGameState(prev => ({ ...prev, players: prev.players.filter(p => p.id !== playerId) }));
+  
+  const removePlayer = async (playerId: string) => {
+    if (!gameState.sessionId) return;
+
+    try {
+      // Check if the removed player is the active player
+      const isActivePlayer = gameState.activePlayerId === playerId;
+      
+      // Get current players to find next player if needed
+      const currentPlayers = gameState.players.filter(p => p.id !== playerId);
+      
+      // If the removed player has a gift, release it back to the pool
+      const removedPlayer = gameState.players.find(p => p.id === playerId);
+      if (removedPlayer?.currentGiftId) {
+        await supabase
+          .from('gifts')
+          .update({ 
+            current_owner_id: null,
+            status: 'revealed'
+          })
+          .eq('id', removedPlayer.currentGiftId);
+      }
+
+      // Delete the player from the database
+      const { error } = await supabase
+        .from('players')
+        .delete()
+        .eq('id', playerId);
+
+      if (error) {
+        console.error('Error removing player:', error);
+        throw error;
+      }
+
+      // Update local state
+      setGameState(prev => ({ 
+        ...prev, 
+        players: prev.players.filter(p => p.id !== playerId) 
+      }));
+
+      // If the removed player was the active player, advance to the next player
+      if (isActivePlayer && currentPlayers.length > 0 && gameState.gameStatus === 'active') {
+        // Find the next player in order
+        const sortedPlayers = [...currentPlayers].sort((a, b) => a.orderIndex - b.orderIndex);
+        const nextPlayer = sortedPlayers.find(p => !p.hasCompletedTurn) || sortedPlayers[0];
+        
+        if (nextPlayer) {
+          await supabase
+            .from('game_sessions')
+            .update({ 
+              active_player_id: nextPlayer.id,
+              turn_started_at: new Date().toISOString()
+            })
+            .eq('id', gameState.sessionId);
+        }
+      }
+
+      console.log('Player removed successfully:', playerId);
+    } catch (error) {
+      console.error('Failed to remove player:', error);
+      throw error;
+    }
+  };
 
   // Auto-restore session on mount
   useEffect(() => {
@@ -1132,6 +1326,7 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
         createSession,
         joinSession,
         restoreSession,
+        restoreSessionFromUrl,
         clearSession,
         getStoredSessionInfo,
         addGift,

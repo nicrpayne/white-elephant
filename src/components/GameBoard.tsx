@@ -5,13 +5,15 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
 import { AlertDialog, AlertDialogAction, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
-import { Pause, Play, SkipForward, AlertCircle, Download, Gift, TreePine, Loader2, Clock, Bell } from "lucide-react";
+import { Pause, Play, SkipForward, AlertCircle, Download, Gift, TreePine, Loader2, Clock, Bell, Volume2, VolumeX } from "lucide-react";
 import { useToast } from "@/components/ui/use-toast";
+import { Slider } from "@/components/ui/slider";
 import GiftGrid from "./GiftGrid";
 import PlayerTurnPanel from "./PlayerTurnPanel";
 import ReportExport from "./ReportExport";
 import { useGame } from "@/contexts/GameContext";
 import { useSearchParams, useNavigate, useParams } from "react-router-dom";
+import { getSoundVolume, setSoundVolume } from "@/lib/sessionStorage";
 
 interface Gift {
   id: string;
@@ -54,7 +56,7 @@ const GameBoard = ({ isAdmin: isAdminProp }: GameBoardProps = {}) => {
   const navigate = useNavigate();
   const { sessionCode: urlSessionCode } = useParams();
   const playerId = searchParams.get("playerId");
-  const { gameState, isLoading: contextLoading, pickGift, stealGift, keepGift, updateGameStatus, getStoredSessionInfo, restoreSession } = useGame();
+  const { gameState, isLoading: contextLoading, pickGift, stealGift, keepGift, updateGameStatus, getStoredSessionInfo, restoreSession, restoreSessionFromUrl } = useGame();
   const [activeTab, setActiveTab] = useState("board");
   const [selectedGiftId, setSelectedGiftId] = useState<string | null>(null);
   const [showTurnAlert, setShowTurnAlert] = useState(false);
@@ -75,6 +77,9 @@ const GameBoard = ({ isAdmin: isAdminProp }: GameBoardProps = {}) => {
   const [timeRemaining, setTimeRemaining] = useState<number | null>(null);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   const lastActivePlayerRef = useRef<string | null>(null);
+  
+  // Sound volume state
+  const [soundVolume, setSoundVolumeState] = useState<number>(getSoundVolume);
   
   // Reset timer when active player changes
   useEffect(() => {
@@ -139,10 +144,17 @@ const GameBoard = ({ isAdmin: isAdminProp }: GameBoardProps = {}) => {
       // Prevent multiple restoration attempts
       if (hasAttemptedRestore.current) return;
       
-      // If session is already loaded (context auto-restored it), just update URL if needed
+      // If session is already loaded (context auto-restored it), check if it matches URL
       if (gameState.sessionId) {
         hasAttemptedRestore.current = true;
         console.log('GameBoard: Session already loaded:', gameState.sessionCode);
+        
+        // If URL has a different session code than what's loaded, redirect to join for the new session
+        if (urlSessionCode && gameState.sessionCode && urlSessionCode.toUpperCase() !== gameState.sessionCode.toUpperCase()) {
+          console.log('GameBoard: URL session differs from loaded session, redirecting to join');
+          navigate(`/join?code=${urlSessionCode}`, { replace: true });
+          return;
+        }
         
         // If we have a session but URL doesn't have playerId, add it
         const stored = getStoredSessionInfo();
@@ -157,6 +169,13 @@ const GameBoard = ({ isAdmin: isAdminProp }: GameBoardProps = {}) => {
       
       const stored = getStoredSessionInfo();
       console.log('GameBoard: Checking for stored session...', stored);
+      
+      // If URL has a session code that differs from stored session, redirect to join for the new session
+      if (urlSessionCode && stored && stored.sessionCode && urlSessionCode.toUpperCase() !== stored.sessionCode.toUpperCase()) {
+        console.log('GameBoard: URL session differs from stored session, redirecting to join for new game');
+        navigate(`/join?code=${urlSessionCode}`, { replace: true });
+        return;
+      }
       
       // If user has a stored player session, try to restore it
       if (stored && stored.playerId && !stored.isAdmin) {
@@ -200,13 +219,36 @@ const GameBoard = ({ isAdmin: isAdminProp }: GameBoardProps = {}) => {
         }
       }
       
-      // No stored session - redirect to join page
+      // No stored session - but check if URL has valid params (player refreshed/dropped)
+      if (urlSessionCode && playerId) {
+        console.log('GameBoard: No stored session, but URL has params. Attempting to restore from URL...');
+        setIsRestoringSession(true);
+        try {
+          const result = await restoreSessionFromUrl(urlSessionCode, playerId);
+          if (result.restored) {
+            console.log('GameBoard: Successfully restored session from URL params');
+            // Session is now loaded, component will re-render with data
+            return;
+          } else {
+            console.log('GameBoard: Could not restore from URL params, redirecting to join');
+            navigate(`/join`, { replace: true });
+          }
+        } catch (error) {
+          console.error('Error restoring from URL:', error);
+          navigate(`/join`, { replace: true });
+        } finally {
+          setIsRestoringSession(false);
+        }
+        return;
+      }
+      
+      // No stored session and no URL params - redirect to join page
       console.log('GameBoard: No stored session found, redirecting to join');
       navigate(`/join`, { replace: true });
     };
 
     tryRestoreSession();
-  }, [contextLoading, gameState.sessionId]);
+  }, [contextLoading, gameState.sessionId, urlSessionCode, playerId]);
 
   // Calculate round index
   const roundIndex = players.filter(p => p.hasCompletedTurn).length + 1;
@@ -217,6 +259,18 @@ const GameBoard = ({ isAdmin: isAdminProp }: GameBoardProps = {}) => {
   // Use prop if provided, otherwise check player data
   const isAdmin = isAdminProp ?? (currentPlayer?.isAdmin || false);
   const activePlayer = players.find(p => p.id === activePlayerId);
+
+  // Update document title when it's player's turn
+  useEffect(() => {
+    if (isMyTurn && gameStatus === "active") {
+      document.title = "🎁 YOUR TURN! - White Elephant";
+    } else {
+      document.title = "White Elephant Game";
+    }
+    return () => {
+      document.title = "White Elephant Game";
+    };
+  }, [isMyTurn, gameStatus]);
 
   // Show loading while restoring session or context is loading
   if (isRestoringSession || contextLoading) {
@@ -230,6 +284,13 @@ const GameBoard = ({ isAdmin: isAdminProp }: GameBoardProps = {}) => {
     );
   }
 
+  // Request notification permission on mount
+  useEffect(() => {
+    if ('Notification' in window && Notification.permission === 'default') {
+      Notification.requestPermission();
+    }
+  }, []);
+
   // Listen for turn changes
   useEffect(() => {
     const handleTurnChange = (event: CustomEvent) => {
@@ -237,12 +298,45 @@ const GameBoard = ({ isAdmin: isAdminProp }: GameBoardProps = {}) => {
       // Show alert if it's this player's turn
       if (playerId && newPlayerId === playerId) {
         setShowTurnAlert(true);
+        
         // Show toast notification
         toast({
           title: "🎉 It's Your Turn!",
           description: "Pick a new gift or steal from another player",
           duration: 5000,
         });
+
+        // Vibrate on mobile devices
+        if ('vibrate' in navigator) {
+          navigator.vibrate([200, 100, 200, 100, 200]);
+        }
+
+        // Play sound alert
+        try {
+          const audioContext = new (window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext)();
+          const oscillator = audioContext.createOscillator();
+          const gainNode = audioContext.createGain();
+          oscillator.connect(gainNode);
+          gainNode.connect(audioContext.destination);
+          oscillator.frequency.value = 800;
+          oscillator.type = 'sine';
+          gainNode.gain.setValueAtTime(0.3, audioContext.currentTime);
+          gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.5);
+          oscillator.start(audioContext.currentTime);
+          oscillator.stop(audioContext.currentTime + 0.5);
+        } catch (e) {
+          console.log('Audio notification not available');
+        }
+
+        // Browser notification (for when tab is in background)
+        if ('Notification' in window && Notification.permission === 'granted') {
+          new Notification("🎁 It's Your Turn!", {
+            body: "Pick a new gift or steal from another player",
+            icon: '/elephant-icon.png',
+            tag: 'turn-notification',
+            requireInteraction: true,
+          });
+        }
       }
     };
 
@@ -252,7 +346,104 @@ const GameBoard = ({ isAdmin: isAdminProp }: GameBoardProps = {}) => {
     };
   }, [playerId, toast]);
   
-  // Listen for steal events
+  // Handle volume change
+  const handleVolumeChange = useCallback((value: number[]) => {
+    const newVolume = value[0];
+    setSoundVolumeState(newVolume);
+    setSoundVolume(newVolume);
+  }, []);
+
+  // Play jingle sound for gift picking
+  const playJingleSound = useCallback(() => {
+    if (soundVolume === 0) return;
+    try {
+      const audioContext = new (window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext)();
+      const gainNode = audioContext.createGain();
+      gainNode.connect(audioContext.destination);
+      gainNode.gain.setValueAtTime(0.3 * soundVolume, audioContext.currentTime);
+      
+      // Jingle bell melody - cheerful ascending notes
+      const notes = [523.25, 659.25, 783.99, 1046.50]; // C5, E5, G5, C6
+      const durations = [0.15, 0.15, 0.15, 0.3];
+      let time = audioContext.currentTime;
+      
+      notes.forEach((freq, i) => {
+        const osc = audioContext.createOscillator();
+        const noteGain = audioContext.createGain();
+        osc.connect(noteGain);
+        noteGain.connect(gainNode);
+        osc.frequency.value = freq;
+        osc.type = 'triangle';
+        noteGain.gain.setValueAtTime(0.4 * soundVolume, time);
+        noteGain.gain.exponentialRampToValueAtTime(0.01, time + durations[i]);
+        osc.start(time);
+        osc.stop(time + durations[i]);
+        time += durations[i] * 0.8;
+      });
+    } catch (e) {
+      console.log('Jingle sound not available');
+    }
+  }, [soundVolume]);
+
+  // Play sneaky steal sound
+  const playStealSound = useCallback(() => {
+    if (soundVolume === 0) return;
+    try {
+      const audioContext = new (window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext)();
+      const gainNode = audioContext.createGain();
+      gainNode.connect(audioContext.destination);
+      gainNode.gain.setValueAtTime(0.25 * soundVolume, audioContext.currentTime);
+      
+      // Sneaky descending "dun dun dunnnn" sound
+      const notes = [392, 349.23, 261.63]; // G4, F4, C4 - dramatic descending
+      const durations = [0.2, 0.2, 0.5];
+      let time = audioContext.currentTime;
+      
+      notes.forEach((freq, i) => {
+        const osc = audioContext.createOscillator();
+        const noteGain = audioContext.createGain();
+        osc.connect(noteGain);
+        noteGain.connect(gainNode);
+        osc.frequency.value = freq;
+        osc.type = 'sawtooth';
+        noteGain.gain.setValueAtTime(0.3 * soundVolume, time);
+        noteGain.gain.exponentialRampToValueAtTime(0.01, time + durations[i]);
+        osc.start(time);
+        osc.stop(time + durations[i]);
+        time += durations[i] * 0.9;
+      });
+    } catch (e) {
+      console.log('Steal sound not available');
+    }
+  }, [soundVolume]);
+
+  // Listen for gift picked sound events (from realtime subscription)
+  useEffect(() => {
+    const handleGiftPickedSound = () => {
+      console.log('🎵 Received giftPickedSound event, playing jingle');
+      playJingleSound();
+    };
+
+    window.addEventListener('giftPickedSound', handleGiftPickedSound as EventListener);
+    return () => {
+      window.removeEventListener('giftPickedSound', handleGiftPickedSound as EventListener);
+    };
+  }, [playJingleSound]);
+
+  // Listen for gift stolen sound events (from realtime subscription)
+  useEffect(() => {
+    const handleGiftStolenSound = () => {
+      console.log('🎭 Received giftStolenSound event, playing steal sound');
+      playStealSound();
+    };
+
+    window.addEventListener('giftStolenSound', handleGiftStolenSound as EventListener);
+    return () => {
+      window.removeEventListener('giftStolenSound', handleGiftStolenSound as EventListener);
+    };
+  }, [playStealSound]);
+  
+  // Listen for steal events (for the visual alert)
   useEffect(() => {
     const handleSteal = (event: CustomEvent) => {
       setStealAlertData(event.detail);
@@ -274,6 +465,17 @@ const GameBoard = ({ isAdmin: isAdminProp }: GameBoardProps = {}) => {
 
     const gift = gifts.find(g => g.id === giftId);
     if (!gift) return;
+
+    // Check if gift is locked
+    if (gift.status === "locked" || gift.stealCount >= 2) {
+      toast({
+        title: "Gift is Locked 🔒",
+        description: "This gift has been stolen the maximum number of times and cannot be stolen again.",
+        variant: "destructive",
+        duration: 4000,
+      });
+      return;
+    }
 
     try {
       if (gift.status === "hidden") {
@@ -458,7 +660,19 @@ const GameBoard = ({ isAdmin: isAdminProp }: GameBoardProps = {}) => {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-purple-50 to-blue-50 p-2 sm:p-4">
-      <div className="max-w-7xl mx-auto space-y-3 sm:space-y-4">
+      {/* Pulsing "Your Turn" Banner */}
+      {isMyTurn && gameStatus === "active" && (
+        <div className="fixed top-0 left-0 right-0 z-50 bg-gradient-to-r from-green-500 via-emerald-500 to-green-500 text-white py-3 px-4 text-center animate-pulse shadow-lg">
+          <div className="flex items-center justify-center gap-2">
+            <span className="text-2xl">🎁</span>
+            <span className="text-lg sm:text-xl font-bold">IT'S YOUR TURN!</span>
+            <span className="text-2xl">🎁</span>
+          </div>
+          <p className="text-sm opacity-90">Pick a gift or steal from another player</p>
+        </div>
+      )}
+      
+      <div className={`max-w-7xl mx-auto space-y-3 sm:space-y-4 ${isMyTurn && gameStatus === "active" ? "pt-20" : ""}`}>
         <Card className="border-2 shadow-lg">
           <CardContent className="p-4 sm:p-6">
             <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 sm:gap-0 mb-4">
@@ -474,6 +688,27 @@ const GameBoard = ({ isAdmin: isAdminProp }: GameBoardProps = {}) => {
                 </div>
               </div>
               <div className="flex items-center gap-2 sm:gap-3 w-full sm:w-auto">
+                {/* Volume Control */}
+                <div className="flex items-center gap-2 bg-white/80 rounded-lg px-2 py-1 border">
+                  <button
+                    onClick={() => handleVolumeChange([soundVolume === 0 ? 0.5 : 0])}
+                    className="text-gray-600 hover:text-gray-900"
+                    title={soundVolume === 0 ? "Unmute" : "Mute"}
+                  >
+                    {soundVolume === 0 ? (
+                      <VolumeX className="h-4 w-4" />
+                    ) : (
+                      <Volume2 className="h-4 w-4" />
+                    )}
+                  </button>
+                  <Slider
+                    value={[soundVolume]}
+                    onValueChange={handleVolumeChange}
+                    max={1}
+                    step={0.1}
+                    className="w-16 sm:w-20"
+                  />
+                </div>
                 <Badge
                   variant={
                     gameStatus === "active"

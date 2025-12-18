@@ -34,9 +34,19 @@ export default function JoinGame() {
         return;
       }
       
-      // If context already restored a session, redirect
+      const codeFromUrl = searchParams.get("code")?.toUpperCase();
+      const stored = getStoredSessionInfo();
+      
+      // If URL has a code parameter, check if it matches the stored session
+      // If it doesn't match, this is a NEW game - don't auto-redirect, let them join fresh
+      if (codeFromUrl && stored && stored.sessionCode !== codeFromUrl) {
+        console.log('URL code differs from stored session - showing join form for new game');
+        setIsCheckingSession(false);
+        return;
+      }
+      
+      // If context already restored a session (and it matches URL code or no URL code), redirect
       if (gameState.sessionId) {
-        const stored = getStoredSessionInfo();
         if (stored && stored.playerId && !stored.isAdmin) {
           navigate(`/game/${gameState.sessionCode}?playerId=${stored.playerId}`, { replace: true });
           return;
@@ -46,9 +56,8 @@ export default function JoinGame() {
         }
       }
       
-      const stored = getStoredSessionInfo();
-      
-      // Always check for stored session first - if user has an active session, redirect them
+      // Only auto-restore if no URL code OR URL code matches stored session
+      // This prevents redirecting to an old game when trying to join a new one
       if (stored && stored.playerId && !stored.isAdmin) {
         // Try to restore the session
         try {
@@ -80,7 +89,7 @@ export default function JoinGame() {
     };
     
     checkExistingSession();
-  }, [contextLoading, gameState.sessionId]);
+  }, [contextLoading, gameState.sessionId, searchParams]);
 
   // Pre-populate game code from URL parameter
   useEffect(() => {

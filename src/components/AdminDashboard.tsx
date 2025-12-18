@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "./ui/card";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
@@ -11,6 +11,8 @@ import { ScrollArea } from "./ui/scroll-area";
 import { Avatar, AvatarImage, AvatarFallback } from "./ui/avatar";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "./ui/dialog";
 import { Checkbox } from "./ui/checkbox";
+import { Slider } from "./ui/slider";
+import { useToast } from "./ui/use-toast";
 import BulkGiftLoader from "./BulkGiftLoader";
 import GiftManagementTab from "./GiftManagementTab";
 import ReportExport from "./ReportExport";
@@ -39,11 +41,14 @@ import {
   GripVertical,
   ChevronRight,
   ChevronLeft,
-  Check
+  Check,
+  Volume2,
+  VolumeX
 } from "lucide-react";
 import QRCode from 'qrcode';
 import { useGame } from "@/contexts/GameContext";
 import GameBoard from "./GameBoard";
+import { getSoundVolume, setSoundVolume } from "@/lib/sessionStorage";
 
 interface Gift {
   id: string;
@@ -94,8 +99,11 @@ const AdminDashboard = () => {
     loadPlayers,
     getStoredSessionInfo,
     restoreSession,
-    clearSession
+    clearSession,
+    removePlayer
   } = useGame();
+  
+  const { toast } = useToast();
   
   const [currentStep, setCurrentStep] = useState(0);
   const [activeTab, setActiveTab] = useState("setup");
@@ -117,6 +125,78 @@ const AdminDashboard = () => {
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
   const [selectedGiftIds, setSelectedGiftIds] = useState<Set<string>>(new Set());
   const [draggedGiftId, setDraggedGiftId] = useState<string | null>(null);
+  
+  // Sound volume state
+  const [soundVolume, setSoundVolumeState] = useState<number>(getSoundVolume);
+
+  // Handle volume change
+  const handleVolumeChange = useCallback((value: number[]) => {
+    const newVolume = value[0];
+    setSoundVolumeState(newVolume);
+    setSoundVolume(newVolume);
+  }, []);
+
+  // Play jingle sound for testing
+  const playTestJingle = useCallback(() => {
+    if (soundVolume === 0) return;
+    try {
+      const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+      const gainNode = audioContext.createGain();
+      gainNode.connect(audioContext.destination);
+      gainNode.gain.setValueAtTime(0.4 * soundVolume, audioContext.currentTime);
+      
+      const notes = [523.25, 659.25, 783.99, 1046.50];
+      const durations = [0.15, 0.15, 0.15, 0.3];
+      let time = audioContext.currentTime;
+      
+      notes.forEach((freq, i) => {
+        const osc = audioContext.createOscillator();
+        const noteGain = audioContext.createGain();
+        osc.connect(noteGain);
+        noteGain.connect(gainNode);
+        osc.frequency.value = freq;
+        osc.type = 'triangle';
+        noteGain.gain.setValueAtTime(0.5 * soundVolume, time);
+        noteGain.gain.exponentialRampToValueAtTime(0.01, time + durations[i]);
+        osc.start(time);
+        osc.stop(time + durations[i]);
+        time += durations[i] * 0.8;
+      });
+    } catch (e) {
+      console.log('Jingle sound not available');
+    }
+  }, [soundVolume]);
+
+  // Play steal sound for testing
+  const playTestSteal = useCallback(() => {
+    if (soundVolume === 0) return;
+    try {
+      const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+      const gainNode = audioContext.createGain();
+      gainNode.connect(audioContext.destination);
+      gainNode.gain.setValueAtTime(0.35 * soundVolume, audioContext.currentTime);
+      
+      const notes = [392, 349.23, 261.63];
+      const durations = [0.2, 0.2, 0.5];
+      let time = audioContext.currentTime;
+      
+      notes.forEach((freq, i) => {
+        const osc = audioContext.createOscillator();
+        const noteGain = audioContext.createGain();
+        osc.connect(noteGain);
+        noteGain.connect(gainNode);
+        osc.frequency.value = freq;
+        osc.type = 'sawtooth';
+        noteGain.gain.setValueAtTime(0.4 * soundVolume, time);
+        noteGain.gain.exponentialRampToValueAtTime(0.01, time + durations[i]);
+        osc.start(time);
+        osc.stop(time + durations[i]);
+        time += durations[i] * 0.9;
+      });
+    } catch (e) {
+      console.log('Steal sound not available');
+    }
+  }, [soundVolume]);
 
   // Get values from context
   const { gifts, players, gameStatus, sessionCode, gameConfig } = gameState;
@@ -620,8 +700,24 @@ const AdminDashboard = () => {
     setDraggedGiftId(null);
   };
 
-  const handleRemovePlayer = (id: string) => {
-    removePlayer(id);
+  const handleRemovePlayer = async (id: string) => {
+    try {
+      const playerName = players.find(p => p.id === id)?.displayName || 'Player';
+      await removePlayer(id);
+      toast({
+        title: "Player Removed",
+        description: `${playerName} has been removed from the game.`,
+        duration: 3000,
+      });
+    } catch (error) {
+      console.error('Error removing player:', error);
+      toast({
+        title: "Error",
+        description: "Failed to remove player. Please try again.",
+        variant: "destructive",
+        duration: 4000,
+      });
+    }
   };
 
   const handlePauseGame = async () => {
@@ -1400,6 +1496,63 @@ const AdminDashboard = () => {
                     <span className="text-sm text-muted-foreground">seconds</span>
                   </div>
                 )}
+
+                <Separator />
+
+                {/* Sound Settings */}
+                <div className="space-y-3">
+                  <Label className="text-sm">Sound Settings</Label>
+                  
+                  {/* Volume Control */}
+                  <div className="flex items-center gap-3">
+                    <button
+                      onClick={() => handleVolumeChange([soundVolume === 0 ? 0.5 : 0])}
+                      className="text-gray-600 hover:text-gray-900"
+                      title={soundVolume === 0 ? "Unmute" : "Mute"}
+                    >
+                      {soundVolume === 0 ? (
+                        <VolumeX className="h-5 w-5" />
+                      ) : (
+                        <Volume2 className="h-5 w-5" />
+                      )}
+                    </button>
+                    <Slider
+                      value={[soundVolume]}
+                      onValueChange={handleVolumeChange}
+                      max={1}
+                      step={0.1}
+                      className="flex-1"
+                    />
+                    <span className="text-sm text-muted-foreground w-12 text-right">
+                      {Math.round(soundVolume * 100)}%
+                    </span>
+                  </div>
+                  
+                  {/* Test Sound Buttons */}
+                  <div className="flex gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="flex-1"
+                      onClick={playTestJingle}
+                      disabled={soundVolume === 0}
+                    >
+                      🎵 Gift Picked
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="flex-1"
+                      onClick={playTestSteal}
+                      disabled={soundVolume === 0}
+                    >
+                      🎭 Gift Stolen
+                    </Button>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Adjust volume and test sounds before starting the game
+                  </p>
+                </div>
               </CardContent>
             </Card>
 
