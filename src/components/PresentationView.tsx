@@ -4,10 +4,10 @@ import { supabase } from '@/lib/supabase';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { Gift, User, Clock } from 'lucide-react';
+import { Gift as GiftIcon, User, Clock } from 'lucide-react';
 import { getSoundVolume, setSoundVolume } from '@/lib/sessionStorage';
 
-interface Gift {
+interface GiftData {
   id: string;
   session_id: string;
   name: string;
@@ -64,7 +64,7 @@ const STEAL_PHRASES = [
 export default function PresentationView() {
   const { sessionCode } = useParams<{ sessionCode: string }>();
   const navigate = useNavigate();
-  const [gifts, setGifts] = useState<Gift[]>([]);
+  const [gifts, setGifts] = useState<GiftData[]>([]);
   const [players, setPlayers] = useState<Player[]>([]);
   const [session, setSession] = useState<Session | null>(null);
   const [revealedGiftId, setRevealedGiftId] = useState<string | null>(null);
@@ -259,40 +259,47 @@ export default function PresentationView() {
         .eq('session_id', sessionData.id)
         .order('order_index');
 
-      if (playersData) setPlayers(playersData);
+      if (playersData) {
+        console.log('🎮 Players loaded:', playersData.length, 'players');
+        setPlayers(playersData);
+      }
+      
+      console.log('🎮 Session state - status:', sessionData.game_status, 'active_player_id:', sessionData.active_player_id);
       
       setIsLoading(false);
+      
+      // Set up the channels now that we have the session ID
+      setupActionsChannel(sessionData.id);
+      setupPlayersChannel(sessionData.id);
     };
 
     fetchData();
 
-    // Subscribe to game_actions for steal notifications
-    const actionsChannel = supabase
-      .channel(`actions-${sessionCode}`)
-      .on(
-        'postgres_changes',
-        {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'game_actions',
-        },
-        async (payload) => {
-          const action = payload.new as any;
-          console.log('🎭 game_actions INSERT received:', action);
-          
-          if (action.action_type === 'steal') {
-            console.log('🎭 Processing steal action');
-            // Fetch all current data to get names
-            const { data: sessionData } = await supabase
-              .from('game_sessions')
-              .select('*')
-              .eq('session_code', sessionCode)
-              .single();
-
-            if (sessionData) {
+    // Subscribe to game_actions for steal notifications - will be set up after session is loaded
+    let actionsChannel: ReturnType<typeof supabase.channel> | null = null;
+    
+    const setupActionsChannel = (currentSessionId: string) => {
+      console.log('🎭 Setting up game_actions channel for session:', currentSessionId);
+      actionsChannel = supabase
+        .channel(`actions-${sessionCode}-${currentSessionId}`)
+        .on(
+          'postgres_changes',
+          {
+            event: 'INSERT',
+            schema: 'public',
+            table: 'game_actions',
+            filter: `session_id=eq.${currentSessionId}`,
+          },
+          async (payload) => {
+            const action = payload.new as any;
+            console.log('🎭 game_actions INSERT received:', action);
+            
+            if (action.action_type === 'steal') {
+              console.log('🎭 Processing steal action for session:', currentSessionId);
+              
               const [giftData, playersData] = await Promise.all([
                 supabase.from('gifts').select('*').eq('id', action.gift_id).single(),
-                supabase.from('players').select('*').eq('session_id', sessionData.id)
+                supabase.from('players').select('*').eq('session_id', currentSessionId)
               ]);
 
               if (giftData.data && playersData.data) {
@@ -301,6 +308,8 @@ export default function PresentationView() {
                 
                 if (thief && victim && giftData.data) {
                   const randomPhrase = STEAL_PHRASES[Math.floor(Math.random() * STEAL_PHRASES.length)];
+                  
+                  console.log('🎭 Setting steal animation:', { thief: thief.display_name, victim: victim.display_name, gift: giftData.data.name });
                   
                   setStealAnimation({
                     giftId: giftData.data.id,
@@ -313,14 +322,16 @@ export default function PresentationView() {
 
                   playStealSound(); // Play dramatic steal sound
 
-                  setTimeout(() => setStealAnimation(null), 4000);
+                  setTimeout(() => setStealAnimation(null), 6000);
                 }
               }
             }
           }
-        }
-      )
-      .subscribe();
+        )
+        .subscribe((status) => {
+          console.log('🎭 Actions channel subscription status:', status);
+        });
+    };
 
     // Subscribe to real-time updates
     const giftsChannel = supabase
@@ -334,7 +345,7 @@ export default function PresentationView() {
         },
         (payload) => {
           if (payload.eventType === 'UPDATE') {
-            const updatedGift = payload.new as Gift;
+            const updatedGift = payload.new as GiftData;
             
             // Only process updates for gifts in this session
             if (updatedGift.session_id !== sessionIdRef.current) {
@@ -362,7 +373,7 @@ export default function PresentationView() {
                 console.log('🎵 Triggering jingle for revealed gift');
                 setRevealedGiftId(updatedGift.id);
                 playJingleSound(); // Play jingle when gift is picked/revealed
-                setTimeout(() => setRevealedGiftId(null), 5000);
+                setTimeout(() => setRevealedGiftId(null), 6000);
               }
               
               return prev.map((g) => (g.id === updatedGift.id ? updatedGift : g));
@@ -380,39 +391,84 @@ export default function PresentationView() {
           event: 'UPDATE',
           schema: 'public',
           table: 'game_sessions',
+          filter: `session_code=eq.${sessionCode}`,
         },
         (payload) => {
+          console.log('🎮 Session update received:', payload.new);
           setSession(payload.new as Session);
         }
       )
       .subscribe();
 
-    const playersChannel = supabase
-      .channel(`players-${sessionCode}`)
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'players',
-        },
-        (payload) => {
-          if (payload.eventType === 'UPDATE') {
-            setPlayers((prev) =>
-              prev.map((p) => (p.id === payload.new.id ? payload.new as Player : p))
-            );
+    // Set up players channel with session filter when session is available
+    let playersChannel: ReturnType<typeof supabase.channel> | null = null;
+    
+    const setupPlayersChannel = (currentSessionId: string) => {
+      playersChannel = supabase
+        .channel(`players-${sessionCode}-${currentSessionId}`)
+        .on(
+          'postgres_changes',
+          {
+            event: '*',
+            schema: 'public',
+            table: 'players',
+            filter: `session_id=eq.${currentSessionId}`,
+          },
+          (payload) => {
+            console.log('👤 Players change received:', payload.eventType, payload.new);
+            if (payload.eventType === 'UPDATE') {
+              setPlayers((prev) =>
+                prev.map((p) => (p.id === payload.new.id ? payload.new as Player : p))
+              );
+            } else if (payload.eventType === 'INSERT') {
+              setPlayers((prev) => [...prev, payload.new as Player]);
+            }
           }
+        )
+        .subscribe((status) => {
+          console.log('👤 Players channel subscription status:', status);
+        });
+    };
+
+    // Health check interval for PresentationView - refresh data periodically to catch missed updates
+    const healthCheckInterval = setInterval(async () => {
+      if (sessionCode) {
+        console.log('🔄 PresentationView health check - refreshing data');
+        
+        try {
+          // Refresh session data
+          const { data: sessionData } = await supabase
+            .from('game_sessions')
+            .select('*')
+            .eq('session_code', sessionCode)
+            .single();
+          
+          if (sessionData) {
+            setSession(sessionData);
+            
+            // Refresh players and gifts in parallel
+            const [playersResult, giftsResult] = await Promise.all([
+              supabase.from('players').select('*').eq('session_id', sessionData.id).order('order_index'),
+              supabase.from('gifts').select('*').eq('session_id', sessionData.id).order('position', { nullsFirst: false }).order('created_at')
+            ]);
+            
+            if (playersResult.data) setPlayers(playersResult.data);
+            if (giftsResult.data) setGifts(giftsResult.data);
+          }
+        } catch (err) {
+          console.warn('Health check failed:', err);
         }
-      )
-      .subscribe();
+      }
+    }, 30000); // Every 30 seconds
 
     return () => {
-      actionsChannel.unsubscribe();
+      if (actionsChannel) actionsChannel.unsubscribe();
+      if (playersChannel) playersChannel.unsubscribe();
       giftsChannel.unsubscribe();
       sessionChannel.unsubscribe();
-      playersChannel.unsubscribe();
+      clearInterval(healthCheckInterval);
     };
-  }, [sessionCode]);
+  }, [sessionCode, playJingleSound, playStealSound, navigate]);
 
   // Generate initials from name
   const getInitials = (name: string) => {
@@ -435,6 +491,7 @@ export default function PresentationView() {
   };
 
   const currentPlayer = players.find((p) => p.id === session?.active_player_id);
+  console.log('🎯 PresentationView render - session:', session?.game_status, 'active_player_id:', session?.active_player_id, 'players:', players.length, 'currentPlayer:', currentPlayer?.display_name);
   const giftCount = gifts.length;
   
   // Calculate optimal grid layout based on gift count to fit on screen
@@ -637,11 +694,11 @@ export default function PresentationView() {
             )}
           </div>
         )}
-        {session?.game_status === 'active' && currentPlayer && !session?.is_final_round && (
+        {session?.game_status === 'active' && !session?.is_final_round && (
           <div className="flex items-center gap-3">
             <Badge className="text-sm px-4 py-2 bg-green-600">
               <User className="h-4 w-4 mr-2" />
-              {currentPlayer.display_name}'s Turn
+              {currentPlayer ? `${currentPlayer.display_name}'s Turn` : 'Game Active'}
             </Badge>
             {session?.turn_timer_enabled && timeRemaining !== null && (
               <Badge className={`text-sm px-4 py-2 ${timeRemaining <= 10 ? 'bg-red-600 animate-pulse' : 'bg-gray-700'}`}>
@@ -654,31 +711,38 @@ export default function PresentationView() {
       </div>
 
       {/* Large Turn Banner - More Prominent */}
-      {session?.game_status === 'active' && currentPlayer && (
+      {session?.game_status === 'active' && (
         <div className="flex-shrink-0 mb-4">
           <Card className="bg-gradient-to-r from-green-500 via-emerald-500 to-teal-500 border-4 border-white shadow-2xl animate-pulse">
             <CardContent className="p-8 text-center">
-              <div className="flex items-center justify-center gap-4">
-                <Avatar className="h-16 w-16 border-4 border-white shadow-lg">
-                  <AvatarImage 
-                    src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${currentPlayer.avatar_seed || currentPlayer.display_name}`}
-                  />
-                  <AvatarFallback className="text-2xl font-bold bg-white text-green-600">
-                    {getInitials(currentPlayer.display_name)}
-                  </AvatarFallback>
-                </Avatar>
-                <div className="text-left">
-                  <p className="text-white/90 text-lg font-medium">Current Turn:</p>
-                  <h2 className="text-4xl font-bold text-white drop-shadow-lg">
-                    {currentPlayer.display_name}
-                  </h2>
+              {currentPlayer ? (
+                <div className="flex items-center justify-center gap-4">
+                  <Avatar className="h-16 w-16 border-4 border-white shadow-lg">
+                    <AvatarImage 
+                      src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${currentPlayer.avatar_seed || currentPlayer.display_name}`}
+                    />
+                    <AvatarFallback className="text-2xl font-bold bg-white text-green-600">
+                      {getInitials(currentPlayer.display_name)}
+                    </AvatarFallback>
+                  </Avatar>
+                  <div className="text-left">
+                    <p className="text-white/90 text-lg font-medium">Current Turn:</p>
+                    <h2 className="text-4xl font-bold text-white drop-shadow-lg">
+                      {currentPlayer.display_name}
+                    </h2>
+                  </div>
+                  {session?.is_final_round && (
+                    <Badge className="ml-4 text-lg px-4 py-2 bg-amber-500 text-white font-bold">
+                      🏆 FINAL ROUND
+                    </Badge>
+                  )}
                 </div>
-                {session?.is_final_round && (
-                  <Badge className="ml-4 text-lg px-4 py-2 bg-amber-500 text-white font-bold">
-                    🏆 FINAL ROUND
-                  </Badge>
-                )}
-              </div>
+              ) : (
+                <div className="text-center">
+                  <p className="text-white/90 text-lg font-medium">Waiting for next turn...</p>
+                  <p className="text-white/60 text-sm mt-2">Active Player ID: {session?.active_player_id || 'None'}</p>
+                </div>
+              )}
             </CardContent>
           </Card>
         </div>

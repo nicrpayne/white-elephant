@@ -282,22 +282,45 @@ export default function BulkGiftLoader({ onAddGifts }: BulkGiftLoaderProps) {
     const approvedGifts = bulkPreviews.filter(p => p.approved && p.status === 'success');
     
     if (approvedGifts.length === 0) {
-      alert('No approved gifts to add');
+      toast({
+        title: "No gifts to add",
+        description: "Please approve at least one gift to add.",
+        variant: "destructive",
+      });
       return;
     }
 
+    // Show progress toast for large batches
+    if (approvedGifts.length > 10) {
+      toast({
+        title: "Adding gifts...",
+        description: `Processing ${approvedGifts.length} gifts. This may take a moment.`,
+      });
+    }
+
     try {
-      const giftsToAdd = approvedGifts.map(gift => ({
-        name: gift.title,
-        imageUrl: gift.image,
-        link: gift.url,
-        description: gift.description,
-      }));
+      // Truncate image URLs if they're too long (some OG images have very long data URLs)
+      const giftsToAdd = approvedGifts.map(gift => {
+        let imageUrl = gift.image;
+        
+        // If it's a data URL or extremely long URL, use a fallback
+        if (imageUrl.startsWith('data:') || imageUrl.length > 2000) {
+          console.warn(`Image URL too long for "${gift.title}", using fallback`);
+          imageUrl = 'https://images.unsplash.com/photo-1513885535751-8b9238bd345a?w=400&q=80';
+        }
+        
+        return {
+          name: gift.title.slice(0, 255), // Limit title length
+          imageUrl: imageUrl,
+          link: gift.url,
+          description: gift.description?.slice(0, 1000) || undefined, // Limit description length
+        };
+      });
 
       await onAddGifts(giftsToAdd);
       
       // Wait for state to update and UI to render before showing notification
-      await new Promise(resolve => setTimeout(resolve, 300));
+      await new Promise(resolve => setTimeout(resolve, 500));
       
       // Clear bulk state
       setBulkUrls('');
@@ -307,11 +330,11 @@ export default function BulkGiftLoader({ onAddGifts }: BulkGiftLoaderProps) {
         title: "Gifts added successfully!",
         description: `${approvedGifts.length} gift(s) have been added to your session.`,
       });
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error adding bulk gifts:', error);
       toast({
         title: "Error adding gifts",
-        description: "Failed to add some gifts. Please try again.",
+        description: error.message || "Failed to add some gifts. Please try again.",
         variant: "destructive",
       });
     }

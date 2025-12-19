@@ -10,10 +10,84 @@ if (!supabaseUrl || !supabaseAnonKey) {
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   realtime: {
     params: {
-      eventsPerSecond: 10,
+      eventsPerSecond: 20, // Increased for better handling of multiple players
     },
   },
+  global: {
+    fetch: (url, options) => {
+      // Add timeout and retry logic
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
+      
+      return fetch(url, {
+        ...options,
+        signal: controller.signal,
+      }).finally(() => clearTimeout(timeoutId));
+    },
+  },
+  db: {
+    schema: 'public',
+  },
+  auth: {
+    autoRefreshToken: true,
+    persistSession: true,
+  },
 });
+
+// Utility function for retrying database operations
+export const withRetry = async <T>(
+  operation: () => Promise<T>,
+  maxRetries = 3,
+  delayMs = 1000
+): Promise<T> => {
+  let lastError: Error | null = null;
+  
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    try {
+      return await operation();
+    } catch (error: any) {
+      lastError = error;
+      console.warn(`Operation failed (attempt ${attempt + 1}/${maxRetries}):`, error.message);
+      
+      // Don't retry on certain errors
+      if (error.code === 'PGRST116' || // Not found
+          error.code === '23505' || // Unique violation
+          error.message?.includes('permission denied')) {
+        throw error;
+      }
+      
+      if (attempt < maxRetries - 1) {
+        // Exponential backoff
+        await new Promise(resolve => setTimeout(resolve, delayMs * Math.pow(2, attempt)));
+      }
+    }
+  }
+  
+  throw lastError;
+};
+
+// Utility for batching operations
+export const batchOperations = async <T, R>(
+  items: T[],
+  operation: (item: T) => Promise<R>,
+  batchSize = 5,
+  delayBetweenBatches = 100
+): Promise<R[]> => {
+  const results: R[] = [];
+  
+  for (let i = 0; i < items.length; i += batchSize) {
+    const batch = items.slice(i, i + batchSize);
+    const batchResults = await Promise.all(batch.map(operation));
+    results.push(...batchResults);
+    
+    // Small delay between batches to avoid overwhelming the server
+    if (i + batchSize < items.length) {
+      await new Promise(resolve => setTimeout(resolve, delayBetweenBatches));
+    }
+  }
+  
+  return results;
+};
 
 // Helper types
 export interface DBGameSession {

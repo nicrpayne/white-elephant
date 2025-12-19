@@ -200,7 +200,6 @@ const AdminDashboard = () => {
 
   // Get values from context
   const { gifts, players, gameStatus, sessionCode, gameConfig } = gameState;
-  console.log('[AdminDashboard] Current gifts from gameState:', gifts.length, 'sessionId:', gameState.sessionId);
 
   // Clear any existing session when creating a new game
   // This ensures "Create Game" always starts fresh
@@ -1757,12 +1756,12 @@ const AdminDashboard = () => {
                             <span className="text-muted-foreground">Status:</span>
                             <Badge
                               variant={
-                                gameStatus === "setup"
+                                gameStatus === "lobby"
                                   ? "outline"
                                   : gameStatus === "active"
                                     ? "default"
                                     : gameStatus === "paused"
-                                      ? "outline"
+                                      ? "secondary"
                                       : "destructive"
                               }
                             >
@@ -1834,7 +1833,7 @@ const AdminDashboard = () => {
 
                   <div className="mt-6 space-y-4">
                     <div className="flex flex-col gap-3">
-                      {(gameStatus === "setup" || gameStatus === "lobby") ? (
+                      {gameStatus === "lobby" ? (
                         <Button
                           onClick={handleStartGame}
                           className="w-full"
@@ -1857,7 +1856,7 @@ const AdminDashboard = () => {
                         </Button>
                       ) : null}
 
-                      {gameStatus !== "setup" && gameStatus !== "lobby" && (
+                      {gameStatus !== "lobby" && (
                         <>
                           <Button
                             onClick={() => {

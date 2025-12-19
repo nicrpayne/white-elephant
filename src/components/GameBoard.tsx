@@ -5,7 +5,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
 import { AlertDialog, AlertDialogAction, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
-import { Pause, Play, SkipForward, AlertCircle, Download, Gift, TreePine, Loader2, Clock, Bell, Volume2, VolumeX } from "lucide-react";
+import { Pause, Play, SkipForward, AlertCircle, Download, Gift as GiftIcon, TreePine, Loader2, Clock, Bell, Volume2, VolumeX, RefreshCw } from "lucide-react";
 import { useToast } from "@/components/ui/use-toast";
 import { Slider } from "@/components/ui/slider";
 import GiftGrid from "./GiftGrid";
@@ -14,6 +14,27 @@ import ReportExport from "./ReportExport";
 import { useGame } from "@/contexts/GameContext";
 import { useSearchParams, useNavigate, useParams } from "react-router-dom";
 import { getSoundVolume, setSoundVolume } from "@/lib/sessionStorage";
+
+// Fun phrases for steal animations
+const STEAL_PHRASES = [
+  "Ho Ho NO! Gift stolen!",
+  "Yoink! Mine now!",
+  "Sneaky steal incoming!",
+  "The Grinch strikes again!",
+  "Gift heist in progress!",
+  "Santa didn't see that coming!",
+  "Elf-sized betrayal!",
+  "Naughty list material!",
+];
+
+interface StealAnimationData {
+  giftId: string;
+  thiefName: string;
+  victimName: string;
+  giftName: string;
+  giftImageUrl?: string;
+  phrase: string;
+}
 
 interface Gift {
   id: string;
@@ -56,7 +77,7 @@ const GameBoard = ({ isAdmin: isAdminProp }: GameBoardProps = {}) => {
   const navigate = useNavigate();
   const { sessionCode: urlSessionCode } = useParams();
   const playerId = searchParams.get("playerId");
-  const { gameState, isLoading: contextLoading, pickGift, stealGift, keepGift, updateGameStatus, getStoredSessionInfo, restoreSession, restoreSessionFromUrl } = useGame();
+  const { gameState, isLoading: contextLoading, pickGift, stealGift, keepGift, updateGameStatus, getStoredSessionInfo, restoreSession, restoreSessionFromUrl, refreshGameState } = useGame();
   const [activeTab, setActiveTab] = useState("board");
   const [selectedGiftId, setSelectedGiftId] = useState<string | null>(null);
   const [showTurnAlert, setShowTurnAlert] = useState(false);
@@ -70,6 +91,14 @@ const GameBoard = ({ isAdmin: isAdminProp }: GameBoardProps = {}) => {
     stealsRemaining: number;
     isLocked: boolean;
   } | null>(null);
+  
+  // Animation states for reveal and steal overlays
+  const [revealedGiftId, setRevealedGiftId] = useState<string | null>(null);
+  const [revealedGiftData, setRevealedGiftData] = useState<{ name: string; imageUrl?: string } | null>(null);
+  const [stealAnimation, setStealAnimation] = useState<StealAnimationData | null>(null);
+  
+  // Refresh state
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
   const { gifts, players, gameStatus, activePlayerId, sessionCode, isFinalRound, firstPlayerId, gameConfig } = gameState;
   
@@ -423,9 +452,28 @@ const GameBoard = ({ isAdmin: isAdminProp }: GameBoardProps = {}) => {
   // Listen for gift picked sound events (from realtime subscription)
   useEffect(() => {
     console.log('🎵 Setting up giftPickedSound listener');
-    const handleGiftPickedSound = () => {
-      console.log('🎵 Received giftPickedSound event, playing jingle');
+    const handleGiftPickedSound = (event: CustomEvent) => {
+      console.log('🎵 Received giftPickedSound event, playing jingle', event.detail);
       playJingleSound();
+      
+      // Trigger reveal animation
+      const giftId = event.detail?.giftId;
+      const giftName = event.detail?.giftName;
+      const giftImageUrl = event.detail?.giftImageUrl;
+      
+      if (giftId) {
+        console.log('🎁 Triggering reveal animation for gift:', giftId, giftName);
+        setRevealedGiftId(giftId);
+        // Store gift data from event for reliable display
+        if (giftName) {
+          setRevealedGiftData({ name: giftName, imageUrl: giftImageUrl });
+        }
+        // Extended duration - 6 seconds
+        setTimeout(() => {
+          setRevealedGiftId(null);
+          setRevealedGiftData(null);
+        }, 6000);
+      }
     };
 
     window.addEventListener('giftPickedSound', handleGiftPickedSound as EventListener);
@@ -438,9 +486,18 @@ const GameBoard = ({ isAdmin: isAdminProp }: GameBoardProps = {}) => {
   // Listen for gift stolen sound events (from realtime subscription)
   useEffect(() => {
     console.log('🎭 Setting up giftStolenSound listener');
-    const handleGiftStolenSound = () => {
+    const handleGiftStolenSound = (event: CustomEvent) => {
       console.log('🎭 Received giftStolenSound event, playing steal sound');
       playStealSound();
+      
+      // Trigger steal animation
+      const giftId = event.detail?.giftId;
+      const gift = gifts.find(g => g.id === giftId);
+      if (gift && gameStatus === 'active') {
+        // We need to get stealer and victim from the stealAlertData that will be dispatched
+        // Set a small timeout to wait for the giftStolen event
+        console.log('🎭 Waiting for steal details...');
+      }
     };
 
     window.addEventListener('giftStolenSound', handleGiftStolenSound as EventListener);
@@ -448,14 +505,44 @@ const GameBoard = ({ isAdmin: isAdminProp }: GameBoardProps = {}) => {
       console.log('🎭 Removing giftStolenSound listener');
       window.removeEventListener('giftStolenSound', handleGiftStolenSound as EventListener);
     };
-  }, [playStealSound]);
+  }, [playStealSound, gifts, gameStatus]);
   
-  // Listen for steal events (for the visual alert)
+  // Listen for steal events (for the visual alert AND steal animation overlay)
   useEffect(() => {
     const handleSteal = (event: CustomEvent) => {
-      setStealAlertData(event.detail);
+      const detail = event.detail;
+      console.log('🎭 GameBoard received giftStolen event:', detail);
+      
+      setStealAlertData(detail);
       setShowStealAlert(true);
-      // Auto-close after 6 seconds (doubled from 3)
+      
+      // Trigger steal animation overlay - use gift image from event if available, otherwise search
+      const gift = detail.giftId ? gifts.find(g => g.id === detail.giftId) : gifts.find(g => g.name === detail.giftName);
+      const giftImageUrl = detail.giftImageUrl || gift?.imageUrl;
+      const randomPhrase = STEAL_PHRASES[Math.floor(Math.random() * STEAL_PHRASES.length)];
+      
+      console.log('🎭 Setting steal animation overlay:', { 
+        giftName: detail.giftName, 
+        thiefName: detail.stealerName, 
+        victimName: detail.victimName,
+        giftImageUrl 
+      });
+      
+      setStealAnimation({
+        giftId: detail.giftId || gift?.id || '',
+        thiefName: detail.stealerName,
+        victimName: detail.victimName,
+        giftName: detail.giftName,
+        giftImageUrl: giftImageUrl,
+        phrase: randomPhrase,
+      });
+      
+      // Extended duration - 6 seconds
+      setTimeout(() => {
+        setStealAnimation(null);
+      }, 6000);
+      
+      // Auto-close alert dialog after 6 seconds
       setTimeout(() => {
         setShowStealAlert(false);
       }, 6000);
@@ -465,7 +552,7 @@ const GameBoard = ({ isAdmin: isAdminProp }: GameBoardProps = {}) => {
     return () => {
       window.removeEventListener('giftStolen', handleSteal as EventListener);
     };
-  }, []);
+  }, [gifts]);
 
   // Show loading while restoring session or context is loading
   if (isRestoringSession || contextLoading) {
@@ -549,6 +636,27 @@ const GameBoard = ({ isAdmin: isAdminProp }: GameBoardProps = {}) => {
       await updateGameStatus("active");
     } catch (error) {
       console.error("Error resuming game:", error);
+    }
+  };
+  
+  const handleManualRefresh = async () => {
+    setIsRefreshing(true);
+    try {
+      await refreshGameState();
+      toast({
+        title: "✅ Refreshed!",
+        description: "Game state has been synced.",
+        duration: 2000,
+      });
+    } catch (error) {
+      console.error("Error refreshing:", error);
+      toast({
+        title: "Refresh failed",
+        description: "Please try again or reload the page.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsRefreshing(false);
     }
   };
 
@@ -774,6 +882,17 @@ const GameBoard = ({ isAdmin: isAdminProp }: GameBoardProps = {}) => {
                     <span className="hidden sm:inline">Resume</span>
                   </Button>
                 )}
+                {/* Manual refresh button - always visible */}
+                <Button 
+                  onClick={handleManualRefresh} 
+                  variant="ghost" 
+                  size="sm" 
+                  className="text-xs sm:text-sm"
+                  disabled={isRefreshing}
+                  title="Sync game state"
+                >
+                  <RefreshCw className={`h-3 w-3 sm:h-4 sm:w-4 ${isRefreshing ? 'animate-spin' : ''}`} />
+                </Button>
               </div>
             </div>
 
@@ -1007,6 +1126,80 @@ const GameBoard = ({ isAdmin: isAdminProp }: GameBoardProps = {}) => {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Reveal Overlay - Shows gift details when revealed */}
+      {revealedGiftId && !stealAnimation && (() => {
+        const revealedGift = gifts.find((g) => g.id === revealedGiftId);
+        const displayGift = revealedGift || revealedGiftData;
+        const giftName = displayGift?.name || 'Gift';
+        const giftImageUrl = revealedGift?.imageUrl || revealedGiftData?.imageUrl;
+        
+        return (
+          <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 pointer-events-none animate-in fade-in duration-300">
+            <div className="bg-white rounded-2xl p-6 sm:p-8 max-w-lg mx-4 shadow-2xl border-4 border-green-500 animate-in zoom-in duration-500">
+              <div className="text-center space-y-4">
+                <div className="bg-green-100 rounded-xl p-3 animate-pulse">
+                  <h2 className="text-2xl sm:text-3xl font-black text-green-600">
+                    🎁 Gift Revealed!
+                  </h2>
+                </div>
+                {giftImageUrl && (
+                  <div className="bg-gray-50 rounded-lg p-4">
+                    <img
+                      src={giftImageUrl}
+                      alt={giftName}
+                      className="w-full h-48 sm:h-64 object-contain"
+                    />
+                  </div>
+                )}
+                <h3 className="text-xl sm:text-2xl font-bold text-gray-900">
+                  {giftName}
+                </h3>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* Steal Animation Overlay */}
+      {stealAnimation && (
+        <div className="fixed inset-0 bg-black/90 flex items-center justify-center z-50 pointer-events-none animate-in fade-in duration-300">
+          <div className="bg-gradient-to-br from-red-600 via-red-500 to-orange-500 rounded-2xl p-6 sm:p-12 max-w-lg sm:max-w-3xl mx-4 shadow-2xl border-4 border-yellow-400 animate-in zoom-in duration-500">
+            <div className="text-center space-y-4 sm:space-y-6">
+              {/* Funny phrase at the top */}
+              <div className="bg-white/20 backdrop-blur-sm rounded-xl p-3 sm:p-4 animate-pulse">
+                <h2 className="text-2xl sm:text-5xl font-black text-white drop-shadow-lg">
+                  {stealAnimation.phrase}
+                </h2>
+              </div>
+              
+              {/* Gift image */}
+              {stealAnimation.giftImageUrl && (
+                <div className="bg-white rounded-lg p-3 sm:p-4 shadow-2xl">
+                  <img
+                    src={stealAnimation.giftImageUrl}
+                    alt={stealAnimation.giftName}
+                    className="w-full h-40 sm:h-80 object-contain"
+                  />
+                </div>
+              )}
+              
+              {/* Steal details */}
+              <div className="bg-white/90 rounded-xl p-4 sm:p-6 space-y-2">
+                <h3 className="text-xl sm:text-3xl font-bold text-gray-900">
+                  {stealAnimation.giftName}
+                </h3>
+                <div className="flex flex-col sm:flex-row items-center justify-center gap-2 sm:gap-3 text-lg sm:text-2xl font-semibold">
+                  <span className="text-red-600">{stealAnimation.thiefName}</span>
+                  <span className="text-gray-600">steals from</span>
+                  <span className="text-blue-600">{stealAnimation.victimName}</span>
+                  <span className="text-2xl sm:text-4xl">😈</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

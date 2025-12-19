@@ -4,6 +4,51 @@
 
 The app now uses Supabase for real-time multi-device synchronization.
 
+---
+
+## 🛡️ Resilience & Production Hardening
+
+### Performance Optimizations for 15-20 players with 30+ gifts:
+
+1. **Retry Logic** (`withRetry()` in `src/lib/supabase.ts`)
+   - All critical database operations retry 3 times with exponential backoff
+   - Delays start at 500ms, doubling each retry
+   - Skips retry on permission errors or unique constraint violations
+
+2. **Batched Operations** (`addGiftsBatch()` in `GameContext.tsx`)
+   - Bulk gift inserts chunked into batches of 10
+   - 200ms delay between batches to avoid overwhelming the database
+   - Continues processing even if one batch fails
+
+3. **Connection Health Monitoring**:
+   - 30-second health check intervals refresh data during active games
+   - Automatic data refresh when realtime subscription reconnects
+   - `ConnectionStatus` component shows connection issues
+
+4. **Event-Driven Error Handling**:
+   - `realtimeConnectionIssue` - Dispatched when realtime has problems
+   - `giftInsertPartialFailure` - Dispatched when some gifts fail to insert
+   - `gameStateRefreshed` - Dispatched when manual refresh completes
+
+5. **Manual Refresh Options**:
+   - 🔄 Refresh button in GameBoard header
+   - ConnectionStatus refresh button (appears on errors)
+   - `refreshGameState()` function in GameContext
+
+6. **Error Boundary** (`ErrorBoundary.tsx`)
+   - Catches React errors and provides friendly recovery UI
+   - Options to refresh page, go home, or try again
+
+7. **Request Timeouts**
+   - 30 second timeout on all Supabase requests
+   - Prevents hanging requests from blocking the UI
+
+8. **Graceful Degradation**
+   - Partial failures don't crash the app
+   - Users are notified of issues but can continue
+
+---
+
 ## Database Schema
 
 ### Tables Created:

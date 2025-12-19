@@ -1,7 +1,16 @@
-import React, { createContext, useContext, useState, useEffect, useRef, ReactNode } from "react";
-import { supabase, DBGameSession, DBPlayer, DBGift } from "@/lib/supabase";
+import React, { createContext, useContext, useState, useEffect, useRef, ReactNode, useCallback } from "react";
+import { supabase, DBGameSession, DBPlayer, DBGift, withRetry } from "@/lib/supabase";
 import { RealtimeChannel } from "@supabase/supabase-js";
 import { storeSession, getStoredSession, clearStoredSession, refreshSessionTimestamp } from "@/lib/sessionStorage";
+
+// Debounce utility
+const debounce = <T extends (...args: any[]) => any>(fn: T, ms: number) => {
+  let timeoutId: ReturnType<typeof setTimeout> | null = null;
+  return (...args: Parameters<T>) => {
+    if (timeoutId) clearTimeout(timeoutId);
+    timeoutId = setTimeout(() => fn(...args), ms);
+  };
+};
 
 // Helper function to generate an 8-character session code
 const generateSessionCode = (): string => {
@@ -86,6 +95,7 @@ interface GameContextType {
   addPlayer: (player: Player) => void;
   removePlayer: (playerId: string) => Promise<void>;
   loadPlayers: (sessionId: string) => Promise<void>;
+  refreshGameState: () => Promise<void>;
   loadGifts: (sessionId: string) => Promise<void>;
 }
 
@@ -165,7 +175,11 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
             if (prevState && prevState.status === 'hidden' && newGift.status === 'revealed') {
               console.log('🎵 Dispatching giftPickedSound event');
               window.dispatchEvent(new CustomEvent('giftPickedSound', { 
-                detail: { giftId: newGift.id } 
+                detail: { 
+                  giftId: newGift.id,
+                  giftName: newGift.name,
+                  giftImageUrl: newGift.image_url
+                } 
               }));
             }
             
@@ -178,6 +192,43 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
               window.dispatchEvent(new CustomEvent('giftStolenSound', { 
                 detail: { giftId: newGift.id } 
               }));
+              
+              // Also dispatch giftStolen with details for the animation overlay
+              // Fetch player names for the animation
+              const fetchStealDetails = async () => {
+                try {
+                  const { data: playersData } = await supabase
+                    .from('players')
+                    .select('id, display_name')
+                    .eq('session_id', gameState.sessionId!);
+                  
+                  if (playersData) {
+                    const stealer = playersData.find(p => p.id === newGift.current_owner_id);
+                    const victim = playersData.find(p => p.id === prevState.ownerId);
+                    
+                    console.log('🎭 Dispatching giftStolen event from realtime:', { 
+                      giftName: newGift.name, 
+                      stealerName: stealer?.display_name,
+                      victimName: victim?.display_name 
+                    });
+                    
+                    window.dispatchEvent(new CustomEvent('giftStolen', {
+                      detail: {
+                        giftName: newGift.name,
+                        stealerName: stealer?.display_name || 'Someone',
+                        victimName: victim?.display_name || 'Someone',
+                        stealsRemaining: 2 - (newGift.steal_count || 0),
+                        isLocked: newGift.status === 'locked' || (newGift.steal_count || 0) >= 2,
+                        giftId: newGift.id,
+                        giftImageUrl: newGift.image_url
+                      }
+                    }));
+                  }
+                } catch (err) {
+                  console.error('Error fetching steal details:', err);
+                }
+              };
+              fetchStealDetails();
             }
             
             // Update previous state
@@ -221,129 +272,205 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
           );
         }
       )
-      .subscribe((status) => {
-        console.log('Subscription status:', status);
+      .subscribe((status, err) => {
+        console.log('Subscription status:', status, err || '');
         if (status === 'SUBSCRIBED') {
           console.log('✅ Successfully subscribed to real-time updates');
+          // Refresh data when connection is re-established
+          loadSession(gameState.sessionId!);
+          loadPlayers(gameState.sessionId!);
+          loadGifts(gameState.sessionId!);
+        } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+          console.warn('⚠️ Realtime connection issue:', status, err);
+          // Dispatch event so UI can show connection status
+          window.dispatchEvent(new CustomEvent('realtimeConnectionIssue', { 
+            detail: { status, error: err } 
+          }));
+        } else if (status === 'CLOSED') {
+          console.warn('📡 Realtime channel closed, will attempt reconnect');
         }
       });
 
     setRealtimeChannel(channel);
 
+    // Set up a periodic health check to refetch data if realtime may have missed updates
+    const healthCheckInterval = setInterval(() => {
+      if (gameState.sessionId && gameState.gameStatus === 'active') {
+        console.log('🔄 Health check: refreshing game state');
+        loadSession(gameState.sessionId);
+        loadPlayers(gameState.sessionId);
+        loadGifts(gameState.sessionId);
+      }
+    }, 30000); // Every 30 seconds during active game
+
     return () => {
       console.log('Unsubscribing from real-time channel');
+      clearInterval(healthCheckInterval);
       channel.unsubscribe();
     };
   }, [gameState.sessionId]);
 
-  // Load session data
+  // Load session data with retry
   const loadSession = async (sessionId: string) => {
-    const { data, error } = await supabase
-      .from('game_sessions')
-      .select('*')
-      .eq('id', sessionId)
-      .single();
+    try {
+      const data = await withRetry(async () => {
+        const { data, error } = await supabase
+          .from('game_sessions')
+          .select('*')
+          .eq('id', sessionId)
+          .single();
+        
+        if (error) throw error;
+        return data;
+      }, 3, 500);
 
-    if (!error && data) {
-      const session = data as DBGameSession;
-      setGameState(prev => ({
-        ...prev,
-        sessionCode: session.session_code,
-        gameStatus: session.game_status,
-        activePlayerId: session.active_player_id,
-        roundIndex: session.round_index,
-        isFinalRound: session.is_final_round ?? false,
-        firstPlayerId: session.first_player_id ?? null,
-        gameConfig: {
-          maxStealsPerGift: session.max_steals_per_gift,
-          randomizeOrder: session.randomize_order,
-          allowImmediateStealback: session.allow_immediate_stealback,
-          turnTimerEnabled: session.turn_timer_enabled ?? false,
-          turnTimerSeconds: session.turn_timer_seconds ?? 60,
-        },
-      }));
+      if (data) {
+        const session = data as DBGameSession;
+        setGameState(prev => ({
+          ...prev,
+          sessionCode: session.session_code,
+          gameStatus: session.game_status,
+          activePlayerId: session.active_player_id,
+          roundIndex: session.round_index,
+          isFinalRound: session.is_final_round ?? false,
+          firstPlayerId: session.first_player_id ?? null,
+          gameConfig: {
+            maxStealsPerGift: session.max_steals_per_gift,
+            randomizeOrder: session.randomize_order,
+            allowImmediateStealback: session.allow_immediate_stealback,
+            turnTimerEnabled: session.turn_timer_enabled ?? false,
+            turnTimerSeconds: session.turn_timer_seconds ?? 60,
+          },
+        }));
+      }
+    } catch (error) {
+      console.error('Error loading session after retries:', error);
     }
   };
 
-  // Load players
+  // Load players with retry
+  const loadPlayersInProgressRef = useRef(false);
+  const pendingPlayersLoadRef = useRef(false);
+  
   const loadPlayers = async (sessionId: string) => {
+    // If a load is in progress, mark that we need another load after
+    if (loadPlayersInProgressRef.current) {
+      pendingPlayersLoadRef.current = true;
+      return;
+    }
+    
+    loadPlayersInProgressRef.current = true;
     console.log('Loading players for session:', sessionId);
-    const { data, error } = await supabase
-      .from('players')
-      .select('*')
-      .eq('session_id', sessionId)
-      .order('order_index');
+    
+    try {
+      const data = await withRetry(async () => {
+        const { data, error } = await supabase
+          .from('players')
+          .select('*')
+          .eq('session_id', sessionId)
+          .order('order_index');
+        
+        if (error) throw error;
+        return data;
+      }, 3, 500);
 
-    if (!error && data) {
-      console.log('Players loaded:', data);
-      const players: Player[] = data.map((p: any) => ({
-        id: p.id,
-        displayName: p.display_name,
-        orderIndex: p.order_index,
-        joinTime: p.joined_at,
-        currentGiftId: p.current_gift_id,
-        isAdmin: p.is_admin,
-        hasCompletedTurn: p.has_completed_turn,
-        avatarSeed: p.avatar_seed,
-      }));
-      setGameState(prev => ({ ...prev, players }));
-    } else if (error) {
-      console.error('Error loading players:', error);
+      if (data) {
+        console.log('Players loaded:', data.length);
+        const players: Player[] = data.map((p: any) => ({
+          id: p.id,
+          displayName: p.display_name,
+          orderIndex: p.order_index,
+          joinTime: p.joined_at,
+          currentGiftId: p.current_gift_id,
+          isAdmin: p.is_admin,
+          hasCompletedTurn: p.has_completed_turn,
+          avatarSeed: p.avatar_seed,
+        }));
+        setGameState(prev => ({ ...prev, players }));
+      }
+    } catch (error) {
+      console.error('Error loading players after retries:', error);
+    } finally {
+      loadPlayersInProgressRef.current = false;
+      
+      // If there was a pending load request, do it now
+      if (pendingPlayersLoadRef.current) {
+        pendingPlayersLoadRef.current = false;
+        loadPlayers(sessionId);
+      }
     }
   };
 
   // Load gifts - using a ref to track the latest call and prevent race conditions
   const loadGiftsCallIdRef = useRef(0);
+  const loadGiftsInProgressRef = useRef(false);
+  const pendingGiftsLoadRef = useRef(false);
   
   const loadGifts = async (sessionId: string) => {
-    const callId = ++loadGiftsCallIdRef.current;
-    console.log(`[loadGifts:${callId}] Loading gifts for session:`, sessionId);
-    
-    const { data, error } = await supabase
-      .from('gifts')
-      .select(`
-        *,
-        owner:players!gifts_current_owner_id_fkey(display_name, avatar_seed)
-      `)
-      .eq('session_id', sessionId)
-      .order('position', { nullsFirst: false })
-      .order('created_at');
-
-    // Check if this is still the latest call
-    if (callId !== loadGiftsCallIdRef.current) {
-      console.log(`[loadGifts:${callId}] Skipping stale result, newer call exists`);
+    // If a load is in progress, mark that we need another load after
+    if (loadGiftsInProgressRef.current) {
+      pendingGiftsLoadRef.current = true;
       return;
     }
+    
+    loadGiftsInProgressRef.current = true;
+    const callId = ++loadGiftsCallIdRef.current;
+    
+    try {
+      const result = await withRetry(async () => {
+        const { data, error } = await supabase
+          .from('gifts')
+          .select(`
+            *,
+            owner:players!gifts_current_owner_id_fkey(display_name, avatar_seed)
+          `)
+          .eq('session_id', sessionId)
+          .order('position', { nullsFirst: false })
+          .order('created_at');
+        
+        if (error) throw error;
+        return data;
+      }, 3, 500);
 
-    if (!error && data) {
-      console.log(`[loadGifts:${callId}] Gifts loaded from DB:`, data.length, 'gifts');
-      
-      const gifts: Gift[] = data.map((g: any) => ({
-        id: g.id,
-        name: g.name,
-        imageUrl: g.image_url,
-        link: g.link || undefined,
-        description: g.description || undefined,
-        status: g.status,
-        stealCount: g.steal_count,
-        currentOwnerId: g.current_owner_id,
-        ownerName: g.owner?.display_name || undefined,
-        ownerAvatarSeed: g.owner?.avatar_seed || undefined,
-      }));
-      
-      console.log(`[loadGifts:${callId}] Setting ${gifts.length} gifts in state`);
-      
-      // Update previous gifts ref for sound detection
-      gifts.forEach(gift => {
-        previousGiftsRef.current.set(gift.id, {
-          status: gift.status,
-          ownerId: gift.currentOwnerId
+      // Check if this is still the latest call
+      if (callId !== loadGiftsCallIdRef.current) {
+        return;
+      }
+
+      if (result) {
+        const gifts: Gift[] = result.map((g: any) => ({
+          id: g.id,
+          name: g.name,
+          imageUrl: g.image_url,
+          link: g.link || undefined,
+          description: g.description || undefined,
+          status: g.status,
+          stealCount: g.steal_count,
+          currentOwnerId: g.current_owner_id,
+          ownerName: g.owner?.display_name || undefined,
+          ownerAvatarSeed: g.owner?.avatar_seed || undefined,
+        }));
+        
+        // Update previous gifts ref for sound detection
+        gifts.forEach(gift => {
+          previousGiftsRef.current.set(gift.id, {
+            status: gift.status,
+            ownerId: gift.currentOwnerId
+          });
         });
-      });
+        
+        setGameState(prev => ({ ...prev, gifts }));
+      }
+    } catch (error) {
+      console.error('Error loading gifts after retries:', error);
+    } finally {
+      loadGiftsInProgressRef.current = false;
       
-      setGameState(prev => ({ ...prev, gifts }));
-    } else if (error) {
-      console.error(`[loadGifts:${callId}] Error loading gifts:`, error);
+      // If there was a pending load request, do it now
+      if (pendingGiftsLoadRef.current) {
+        pendingGiftsLoadRef.current = false;
+        loadGifts(sessionId);
+      }
     }
   };
 
@@ -679,11 +806,8 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
     let sessionId = gameState.sessionId;
     
     if (!sessionId) {
-      console.log('No session ID, creating new session...');
       sessionId = await createSession();
     }
-
-    console.log('Adding gift to session:', sessionId, gift);
 
     // Get next position
     const { data: maxPosData } = await supabase
@@ -705,86 +829,103 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
       steal_count: 0,
       position: nextPosition,
     };
-    
-    console.log('Inserting gift data:', giftData);
 
     const { data, error } = await supabase.from('gifts').insert(giftData).select();
 
     if (error) {
-      console.error('Supabase error adding gift:', error);
+      console.error('Error adding gift:', error);
       throw error;
     }
-    
-    console.log('Gift added successfully, returned data:', data);
 
     // Don't reload here - let the realtime subscription handle it
     // This prevents race conditions when adding multiple gifts
   };
 
   // Batch add gifts - more reliable for bulk operations
+  // Chunk size for inserts to avoid overwhelming the database
+  const BATCH_CHUNK_SIZE = 10;
+  
   const addGiftsBatch = async (gifts: Omit<Gift, 'id' | 'status' | 'stealCount' | 'currentOwnerId'>[], retryCount = 0) => {
     let sessionId = gameState.sessionId;
     
     if (!sessionId) {
-      console.log('No session ID, creating new session...');
       sessionId = await createSession();
-      console.log('New session created with ID:', sessionId);
     }
 
-    console.log('Batch adding gifts to session:', sessionId, 'gift count:', gifts.length);
-
-    // Get next position
-    const { data: maxPosData, error: posError } = await supabase
-      .from('gifts')
-      .select('position')
-      .eq('session_id', sessionId)
-      .order('position', { ascending: false })
-      .limit(1);
-    
-    if (posError) {
-      console.error('Error getting max position:', posError);
-    }
+    // Get next position with retry
+    const maxPosData = await withRetry(async () => {
+      const { data, error } = await supabase
+        .from('gifts')
+        .select('position')
+        .eq('session_id', sessionId)
+        .order('position', { ascending: false })
+        .limit(1);
+      
+      if (error) throw error;
+      return data;
+    }, 3, 500);
     
     const startPosition = (maxPosData?.[0]?.position ?? 0) + 1;
-    console.log('Starting position for new gifts:', startPosition);
 
-    const giftsData = gifts.map((gift, index) => ({
-      session_id: sessionId,
-      name: gift.name,
-      image_url: gift.imageUrl,
-      link: gift.link || null,
-      description: gift.description || null,
-      status: 'hidden',
-      steal_count: 0,
-      position: startPosition + index,
-    }));
+    // Split gifts into chunks for more reliable insertion
+    const allInsertedGifts: any[] = [];
+    const errors: Error[] = [];
     
-    console.log('Batch inserting gift data, count:', giftsData.length);
+    for (let i = 0; i < gifts.length; i += BATCH_CHUNK_SIZE) {
+      const chunk = gifts.slice(i, i + BATCH_CHUNK_SIZE);
+      const chunkData = chunk.map((gift, index) => ({
+        session_id: sessionId,
+        name: gift.name,
+        image_url: gift.imageUrl,
+        link: gift.link || null,
+        description: gift.description || null,
+        status: 'hidden',
+        steal_count: 0,
+        position: startPosition + i + index,
+      }));
 
-    const { data, error } = await supabase.from('gifts').insert(giftsData).select();
-
-    if (error) {
-      console.error('Supabase error batch adding gifts:', error);
-      
-      // Retry up to 2 times on network errors
-      if (retryCount < 2 && (error.message?.includes('Load failed') || error.message?.includes('network'))) {
-        console.log(`Retrying batch add (attempt ${retryCount + 1}/2)...`);
-        await new Promise(resolve => setTimeout(resolve, 1000)); // Wait 1 second
-        return addGiftsBatch(gifts, retryCount + 1);
+      try {
+        const result = await withRetry(async () => {
+          const { data, error } = await supabase.from('gifts').insert(chunkData).select();
+          if (error) throw error;
+          return data;
+        }, 3, 1000);
+        
+        if (result) {
+          allInsertedGifts.push(...result);
+        }
+        
+        // Small delay between chunks to avoid overwhelming the server
+        if (i + BATCH_CHUNK_SIZE < gifts.length) {
+          await new Promise(resolve => setTimeout(resolve, 200));
+        }
+      } catch (error: any) {
+        console.error(`Error inserting gift chunk ${i / BATCH_CHUNK_SIZE + 1}:`, error);
+        errors.push(error);
+        
+        // Continue with other chunks even if one fails
+        // Dispatch event so UI can inform user of partial failure
+        window.dispatchEvent(new CustomEvent('giftInsertPartialFailure', { 
+          detail: { 
+            failedCount: chunk.length, 
+            totalCount: gifts.length,
+            error: error.message 
+          } 
+        }));
       }
-      
-      throw error;
     }
     
-    console.log('Gifts batch added successfully, count:', data?.length);
+    if (errors.length > 0 && allInsertedGifts.length === 0) {
+      throw new Error(`Failed to insert any gifts: ${errors[0].message}`);
+    }
+    
+    console.log(`✅ Successfully inserted ${allInsertedGifts.length}/${gifts.length} gifts`);
 
     // Small delay to ensure DB transaction is fully committed
     await new Promise(resolve => setTimeout(resolve, 100));
 
     // Manually reload to ensure we have the latest data
-    console.log('Reloading gifts for session:', sessionId);
     await loadGifts(sessionId);
-    console.log('Gifts reload complete');
   };
 
   // Remove gift
@@ -961,27 +1102,35 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
         throw new Error('You have already picked a gift this round');
       }
 
-      // Update gift status to revealed and assign to current player
-      await supabase
-        .from('gifts')
-        .update({
-          status: 'revealed',
-          current_owner_id: gameState.activePlayerId,
-        })
-        .eq('id', giftId);
+      // Update gift status to revealed and assign to current player - with retry
+      await withRetry(async () => {
+        const { error } = await supabase
+          .from('gifts')
+          .update({
+            status: 'revealed',
+            current_owner_id: gameState.activePlayerId,
+          })
+          .eq('id', giftId);
+        
+        if (error) throw error;
+      }, 3, 500);
 
       // Play jingle sound for gift picking
       console.log('🎵 pickGift: Dispatching giftPickedSound event for gift:', giftId);
       window.dispatchEvent(new CustomEvent('giftPickedSound', { detail: { giftId } }));
 
-      // Update player's current gift
-      await supabase
-        .from('players')
-        .update({
-          current_gift_id: giftId,
-          has_completed_turn: true,
-        })
-        .eq('id', gameState.activePlayerId);
+      // Update player's current gift - with retry
+      await withRetry(async () => {
+        const { error } = await supabase
+          .from('players')
+          .update({
+            current_gift_id: giftId,
+            has_completed_turn: true,
+          })
+          .eq('id', gameState.activePlayerId);
+        
+        if (error) throw error;
+      }, 3, 500);
 
       // If we're in the final round and someone picks a new gift, the game ends
       if (gameState.isFinalRound) {
@@ -1120,26 +1269,34 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
         ? gameState.gifts.find(g => g.id === stealerCurrentGiftId) 
         : null;
 
-      // Log the steal action to game_actions table
-      await supabase
-        .from('game_actions')
-        .insert({
-          session_id: gameState.sessionId,
-          player_id: gameState.activePlayerId,
-          action_type: 'steal',
-          gift_id: giftId,
-          previous_owner_id: previousOwnerId,
-        });
+      // Log the steal action to game_actions table - with retry
+      await withRetry(async () => {
+        const { error } = await supabase
+          .from('game_actions')
+          .insert({
+            session_id: gameState.sessionId,
+            player_id: gameState.activePlayerId,
+            action_type: 'steal',
+            gift_id: giftId,
+            previous_owner_id: previousOwnerId,
+          });
+        
+        if (error) throw error;
+      }, 3, 500);
 
-      // Update stolen gift - assign to new owner and increment steal count
-      await supabase
-        .from('gifts')
-        .update({
-          current_owner_id: gameState.activePlayerId,
-          steal_count: newStealCount,
-          status: newStealCount >= 2 ? 'locked' : 'revealed',
-        })
-        .eq('id', giftId);
+      // Update stolen gift - assign to new owner and increment steal count - with retry
+      await withRetry(async () => {
+        const { error } = await supabase
+          .from('gifts')
+          .update({
+            current_owner_id: gameState.activePlayerId,
+            steal_count: newStealCount,
+            status: newStealCount >= 2 ? 'locked' : 'revealed',
+          })
+          .eq('id', giftId);
+        
+        if (error) throw error;
+      }, 3, 500);
 
       // Play steal sound
       console.log('🎭 stealGift: Dispatching giftStolenSound event for gift:', giftId);
@@ -1313,6 +1470,32 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
     }
   };
 
+  // Manual refresh function to recover from sync issues
+  const refreshGameState = async () => {
+    if (!gameState.sessionId) {
+      console.log('No session to refresh');
+      return;
+    }
+    
+    console.log('🔄 Manual refresh triggered for session:', gameState.sessionId);
+    
+    try {
+      await Promise.all([
+        loadSession(gameState.sessionId),
+        loadPlayers(gameState.sessionId),
+        loadGifts(gameState.sessionId),
+      ]);
+      
+      console.log('✅ Manual refresh completed successfully');
+      
+      // Notify UI that refresh completed
+      window.dispatchEvent(new CustomEvent('gameStateRefreshed'));
+    } catch (error) {
+      console.error('❌ Manual refresh failed:', error);
+      throw error;
+    }
+  };
+
   // Auto-restore session on mount
   useEffect(() => {
     const initSession = async () => {
@@ -1367,6 +1550,7 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
         removePlayer,
         loadPlayers,
         loadGifts,
+        refreshGameState,
       }}
     >
       {children}

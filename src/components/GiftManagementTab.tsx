@@ -44,8 +44,6 @@ export default function GiftManagementTab({
   updateGift,
   reorderGifts
 }: GiftManagementTabProps) {
-  console.log('GiftManagementTab rendered with gifts:', gifts);
-  
   // State for adding new gift
   const [newGiftUrl, setNewGiftUrl] = useState("");
   const [isLoadingPreview, setIsLoadingPreview] = useState(false);
@@ -81,9 +79,6 @@ export default function GiftManagementTab({
             const asinMatch = url.match(/\/dp\/([A-Z0-9]{10})/i) || url.match(/\/gp\/product\/([A-Z0-9]{10})/i);
             
             if (asinMatch) {
-              const asin = asinMatch[1];
-              console.log('Found Amazon ASIN:', asin);
-              
               // Extract product name from URL slug (the part before /dp/)
               const urlParts = url.split('/');
               const dpIndex = urlParts.findIndex(part => part === 'dp' || part === 'product');
@@ -117,7 +112,6 @@ export default function GiftManagementTab({
                   .replace(/\bOf\b/g, 'of')
                   .replace(/\bWith\b/g, 'with');
                 
-                console.log('Extracted title from URL:', title);
               } else {
                 title = 'Amazon Product';
               }
@@ -126,8 +120,6 @@ export default function GiftManagementTab({
               
               // Use nice fallback image
               image = 'https://images.unsplash.com/photo-1513885535751-8b9238bd345a?w=400&q=80';
-              
-              console.log('Amazon URL processed:', { title, asin });
             }
             
             setPreviewData({
@@ -484,10 +476,8 @@ export default function GiftManagementTab({
 
       {/* Bulk Gift Loader */}
       <BulkGiftLoader onAddGifts={async (giftsToAdd) => {
-        console.log('Bulk adding gifts using batch:', giftsToAdd.length);
         try {
           await addGiftsBatchAsync(giftsToAdd);
-          console.log('Batch add completed successfully');
         } catch (error) {
           console.error('Error in batch add:', error);
           throw error;
