@@ -483,10 +483,15 @@ export default function GiftManagementTab({
       </Card>
 
       {/* Bulk Gift Loader */}
-      <BulkGiftLoader onAddGifts={async (gifts) => {
-        console.log('Bulk adding gifts using batch:', gifts.length);
-        await addGiftsBatchAsync(gifts);
-        console.log('Batch add completed');
+      <BulkGiftLoader onAddGifts={async (giftsToAdd) => {
+        console.log('Bulk adding gifts using batch:', giftsToAdd.length);
+        try {
+          await addGiftsBatchAsync(giftsToAdd);
+          console.log('Batch add completed successfully');
+        } catch (error) {
+          console.error('Error in batch add:', error);
+          throw error;
+        }
       }} />
 
       {/* Gift List Card */}

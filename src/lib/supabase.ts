@@ -27,6 +27,8 @@ export interface DBGameSession {
   allow_immediate_stealback: boolean;
   turn_timer_enabled: boolean;
   turn_timer_seconds: number;
+  is_final_round: boolean | null;
+  first_player_id: string | null;
   created_at: string;
   updated_at: string;
 }

@@ -71,7 +71,7 @@ const GameBoard = ({ isAdmin: isAdminProp }: GameBoardProps = {}) => {
     isLocked: boolean;
   } | null>(null);
 
-  const { gifts, players, gameStatus, activePlayerId, currentPlayerId, sessionCode, isFinalRound, firstPlayerId, gameConfig } = gameState;
+  const { gifts, players, gameStatus, activePlayerId, sessionCode, isFinalRound, firstPlayerId, gameConfig } = gameState;
   
   // Timer state
   const [timeRemaining, setTimeRemaining] = useState<number | null>(null);
@@ -760,8 +760,7 @@ const GameBoard = ({ isAdmin: isAdminProp }: GameBoardProps = {}) => {
                 >
                   {gameStatus === "active" && "🎮 Active"}
                   {gameStatus === "paused" && "⏸️ Paused"}
-                  {gameStatus === "setup" && "⚙️ Setup"}
-                  {gameStatus === "ended" && "🏁 Ended"}
+                  {(gameStatus === "setup" || gameStatus === "lobby") && "⚙️ Setup"}
                 </Badge>
                 {isAdmin && gameStatus === "active" && (
                   <Button onClick={handlePauseGame} variant="outline" size="sm" className="text-xs sm:text-sm">

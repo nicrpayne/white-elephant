@@ -200,6 +200,7 @@ const AdminDashboard = () => {
 
   // Get values from context
   const { gifts, players, gameStatus, sessionCode, gameConfig } = gameState;
+  console.log('[AdminDashboard] Current gifts from gameState:', gifts.length, 'sessionId:', gameState.sessionId);
 
   // Clear any existing session when creating a new game
   // This ensures "Create Game" always starts fresh
@@ -685,7 +686,7 @@ const AdminDashboard = () => {
     e.preventDefault();
     if (!draggedGiftId || draggedGiftId === targetGiftId) return;
 
-    const draggedIndex = gifts.findIndex(g => g.id === draggedId);
+    const draggedIndex = gifts.findIndex(g => g.id === draggedGiftId);
     const targetIndex = gifts.findIndex(g => g.id === targetGiftId);
 
     const newGifts = [...gifts];
@@ -738,9 +739,7 @@ const AdminDashboard = () => {
 
   const handleEndGame = async () => {
     try {
-      if (endGame) {
-        await endGame();
-      }
+      await updateGameStatus("ended");
     } catch (error) {
       console.error('Error ending game:', error);
     }
@@ -1835,7 +1834,7 @@ const AdminDashboard = () => {
 
                   <div className="mt-6 space-y-4">
                     <div className="flex flex-col gap-3">
-                      {gameStatus === "setup" ? (
+                      {(gameStatus === "setup" || gameStatus === "lobby") ? (
                         <Button
                           onClick={handleStartGame}
                           className="w-full"
@@ -1858,7 +1857,7 @@ const AdminDashboard = () => {
                         </Button>
                       ) : null}
 
-                      {gameStatus !== "setup" && (
+                      {gameStatus !== "setup" && gameStatus !== "lobby" && (
                         <>
                           <Button
                             onClick={() => {

@@ -62,7 +62,7 @@ interface GameContextType {
   gameState: GameState;
   isLoading: boolean;
   createSession: () => Promise<string>;
-  joinSession: (sessionCode: string, displayName: string) => Promise<string>;
+  joinSession: (sessionCode: string, displayName: string, avatarSeed?: string) => Promise<string>;
   restoreSession: () => Promise<{ restored: boolean; sessionCode?: string; playerId?: string; isAdmin?: boolean }>;
   restoreSessionFromUrl: (sessionCode: string, playerId: string) => Promise<{ restored: boolean; sessionCode?: string; playerId?: string }>;
   clearSession: () => void;
@@ -292,9 +292,13 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
     }
   };
 
-  // Load gifts
+  // Load gifts - using a ref to track the latest call and prevent race conditions
+  const loadGiftsCallIdRef = useRef(0);
+  
   const loadGifts = async (sessionId: string) => {
-    console.log('Loading gifts for session:', sessionId);
+    const callId = ++loadGiftsCallIdRef.current;
+    console.log(`[loadGifts:${callId}] Loading gifts for session:`, sessionId);
+    
     const { data, error } = await supabase
       .from('gifts')
       .select(`
@@ -305,28 +309,29 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
       .order('position', { nullsFirst: false })
       .order('created_at');
 
+    // Check if this is still the latest call
+    if (callId !== loadGiftsCallIdRef.current) {
+      console.log(`[loadGifts:${callId}] Skipping stale result, newer call exists`);
+      return;
+    }
+
     if (!error && data) {
-      console.log('Gifts loaded from DB:', data);
-      console.log('Number of gifts:', data.length);
-      console.log('First gift (if any):', data[0]);
+      console.log(`[loadGifts:${callId}] Gifts loaded from DB:`, data.length, 'gifts');
       
-      const gifts: Gift[] = data.map((g: any) => {
-        console.log('Mapping gift:', g);
-        return {
-          id: g.id,
-          name: g.name,
-          imageUrl: g.image_url,
-          link: g.link || undefined,
-          description: g.description || undefined,
-          status: g.status,
-          stealCount: g.steal_count,
-          currentOwnerId: g.current_owner_id,
-          ownerName: g.owner?.display_name || undefined,
-          ownerAvatarSeed: g.owner?.avatar_seed || undefined,
-        };
-      });
-      console.log('Mapped gifts array:', gifts);
-      console.log('Setting gifts in state:', gifts);
+      const gifts: Gift[] = data.map((g: any) => ({
+        id: g.id,
+        name: g.name,
+        imageUrl: g.image_url,
+        link: g.link || undefined,
+        description: g.description || undefined,
+        status: g.status,
+        stealCount: g.steal_count,
+        currentOwnerId: g.current_owner_id,
+        ownerName: g.owner?.display_name || undefined,
+        ownerAvatarSeed: g.owner?.avatar_seed || undefined,
+      }));
+      
+      console.log(`[loadGifts:${callId}] Setting ${gifts.length} gifts in state`);
       
       // Update previous gifts ref for sound detection
       gifts.forEach(gift => {
@@ -338,7 +343,7 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
       
       setGameState(prev => ({ ...prev, gifts }));
     } else if (error) {
-      console.error('Error loading gifts:', error);
+      console.error(`[loadGifts:${callId}] Error loading gifts:`, error);
     }
   };
 
@@ -723,19 +728,25 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
     if (!sessionId) {
       console.log('No session ID, creating new session...');
       sessionId = await createSession();
+      console.log('New session created with ID:', sessionId);
     }
 
-    console.log('Batch adding gifts to session:', sessionId, gifts.length);
+    console.log('Batch adding gifts to session:', sessionId, 'gift count:', gifts.length);
 
     // Get next position
-    const { data: maxPosData } = await supabase
+    const { data: maxPosData, error: posError } = await supabase
       .from('gifts')
       .select('position')
       .eq('session_id', sessionId)
       .order('position', { ascending: false })
       .limit(1);
     
+    if (posError) {
+      console.error('Error getting max position:', posError);
+    }
+    
     const startPosition = (maxPosData?.[0]?.position ?? 0) + 1;
+    console.log('Starting position for new gifts:', startPosition);
 
     const giftsData = gifts.map((gift, index) => ({
       session_id: sessionId,
@@ -748,7 +759,7 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
       position: startPosition + index,
     }));
     
-    console.log('Batch inserting gift data:', giftsData);
+    console.log('Batch inserting gift data, count:', giftsData.length);
 
     const { data, error } = await supabase.from('gifts').insert(giftsData).select();
 
@@ -767,8 +778,13 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
     
     console.log('Gifts batch added successfully, count:', data?.length);
 
+    // Small delay to ensure DB transaction is fully committed
+    await new Promise(resolve => setTimeout(resolve, 100));
+
     // Manually reload to ensure we have the latest data
+    console.log('Reloading gifts for session:', sessionId);
     await loadGifts(sessionId);
+    console.log('Gifts reload complete');
   };
 
   // Remove gift
