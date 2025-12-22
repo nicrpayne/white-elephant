@@ -68,10 +68,8 @@ const Home = () => {
   };
 
   const handleCreateGame = () => {
-    // Clear any existing session to start fresh
-    clearSession();
+    // Navigate to admin - it will check for existing session and offer to restore
     setShowResumeBanner(false);
-    setStoredSession(null);
     navigate("/admin/create");
   };
 
