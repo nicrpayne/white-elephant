@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
-import { Card, CardContent, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
@@ -582,6 +582,92 @@ const GameBoard = ({ isAdmin: isAdminProp }: GameBoardProps = {}) => {
             Join a Game
           </button>
         </div>
+      </div>
+    );
+  }
+
+  // Show waiting screen for players when game hasn't started yet
+  if ((gameStatus === "lobby" || gameStatus === "setup") && playerId) {
+    const currentPlayer = players.find(p => p.id === playerId);
+    
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-red-50 via-green-50 to-red-50 flex items-center justify-center p-4">
+        <Card className="w-full max-w-2xl">
+          <CardHeader className="text-center">
+            <div className="mx-auto mb-4">
+              <img src="/elephant-icon.png" alt="White Elephant" className="h-20 w-20 mx-auto" />
+            </div>
+            <CardTitle className="text-3xl">Waiting for Game to Start</CardTitle>
+            <CardDescription className="text-lg">
+              The host is getting everything ready. Hang tight!
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-6">
+            {/* Player Info */}
+            <div className="text-center p-6 bg-gradient-to-r from-green-50 to-emerald-50 rounded-xl border-2 border-green-200">
+              <p className="text-sm text-muted-foreground mb-3">You're playing as</p>
+              <div className="flex items-center justify-center gap-4">
+                <Avatar className="h-16 w-16 border-4 border-white shadow-lg">
+                  <AvatarImage src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${currentPlayer?.avatarSeed || currentPlayer?.displayName}`} />
+                  <AvatarFallback className="text-xl font-bold bg-gradient-to-br from-green-400 to-emerald-400 text-white">
+                    {currentPlayer?.displayName?.substring(0, 2).toUpperCase()}
+                  </AvatarFallback>
+                </Avatar>
+                <div className="text-left">
+                  <p className="font-bold text-2xl">{currentPlayer?.displayName}</p>
+                  <Badge variant="secondary" className="mt-1">
+                    Player #{(currentPlayer?.orderIndex ?? 0) + 1}
+                  </Badge>
+                </div>
+              </div>
+            </div>
+
+            {/* Game Code */}
+            <div className="flex items-center justify-center gap-2 p-4 bg-muted rounded-lg">
+              <span className="text-muted-foreground">Game Code:</span>
+              <span className="font-mono font-bold text-xl">{sessionCode}</span>
+            </div>
+
+            {/* Players List */}
+            <div>
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="font-semibold text-lg">Players Ready ({players.length})</h3>
+                <div className="flex items-center gap-2 text-green-600">
+                  <div className="h-2 w-2 rounded-full bg-green-500 animate-pulse" />
+                  <span className="text-sm">Waiting for host</span>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 max-h-[200px] overflow-y-auto">
+                {players.map((player) => (
+                  <div
+                    key={player.id}
+                    className={`flex items-center gap-2 p-2 rounded-lg border ${
+                      player.id === playerId 
+                        ? "bg-green-50 border-green-300" 
+                        : "bg-white border-gray-200"
+                    }`}
+                  >
+                    <Avatar className="h-8 w-8">
+                      <AvatarImage src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${player.avatarSeed || player.displayName}`} />
+                      <AvatarFallback className="text-xs">
+                        {player.displayName?.substring(0, 2).toUpperCase()}
+                      </AvatarFallback>
+                    </Avatar>
+                    <span className="text-sm font-medium truncate">{player.displayName}</span>
+                    {player.id === playerId && (
+                      <span className="text-xs text-green-600">(you)</span>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Fun waiting message */}
+            <div className="text-center text-muted-foreground text-sm">
+              <p className="animate-pulse">🎁 Get ready to steal some presents! 🎁</p>
+            </div>
+          </CardContent>
+        </Card>
       </div>
     );
   }
