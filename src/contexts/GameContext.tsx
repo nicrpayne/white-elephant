@@ -493,13 +493,11 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
     const callId = ++loadGiftsCallIdRef.current;
     
     try {
+      // Simple query without JOIN - hydrate owner info from cached players
       const result = await withRetry(async () => {
         const { data, error } = await supabase
           .from('gifts')
-          .select(`
-            *,
-            owner:players!gifts_current_owner_id_fkey(display_name, avatar_seed)
-          `)
+          .select('id, name, image_url, link, description, status, steal_count, current_owner_id, position, created_at')
           .eq('session_id', sessionId)
           .order('position', { nullsFirst: false })
           .order('created_at');
@@ -514,18 +512,22 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
       }
 
       if (result) {
-        const gifts: Gift[] = result.map((g: any) => ({
-          id: g.id,
-          name: g.name,
-          imageUrl: g.image_url,
-          link: g.link || undefined,
-          description: g.description || undefined,
-          status: g.status,
-          stealCount: g.steal_count,
-          currentOwnerId: g.current_owner_id,
-          ownerName: g.owner?.display_name || undefined,
-          ownerAvatarSeed: g.owner?.avatar_seed || undefined,
-        }));
+        // Hydrate owner info from cached players list (no extra DB call)
+        const gifts: Gift[] = result.map((g: any) => {
+          const ownerPlayer = playersRef.current.find(p => p.id === g.current_owner_id);
+          return {
+            id: g.id,
+            name: g.name,
+            imageUrl: g.image_url,
+            link: g.link || undefined,
+            description: g.description || undefined,
+            status: g.status,
+            stealCount: g.steal_count,
+            currentOwnerId: g.current_owner_id,
+            ownerName: ownerPlayer?.displayName || undefined,
+            ownerAvatarSeed: ownerPlayer?.avatarSeed || undefined,
+          };
+        });
         
         // Update previous gifts ref for sound detection
         gifts.forEach(gift => {
