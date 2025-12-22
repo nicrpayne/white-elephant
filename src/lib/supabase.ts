@@ -9,7 +9,7 @@ export const supabase = supabaseConfigured
   ? createClient(supabaseUrl, supabaseAnonKey, {
       realtime: {
         params: {
-          eventsPerSecond: 20,
+          eventsPerSecond: 100,
         },
       },
       global: {

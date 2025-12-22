@@ -1,11 +1,77 @@
 import { supabase, supabaseConfigured } from './supabase';
 
 const STORAGE_BUCKET = 'gift-images';
+const MAX_IMAGE_WIDTH = 800;
+const MAX_IMAGE_HEIGHT = 800;
+const TARGET_FILE_SIZE = 200 * 1024; // 200KB target
+const INITIAL_QUALITY = 0.85;
 
 export interface UploadResult {
   success: boolean;
   url?: string;
   error?: string;
+}
+
+async function compressImage(file: File): Promise<Blob> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+    
+    if (!ctx) {
+      reject(new Error('Canvas context not available'));
+      return;
+    }
+
+    img.onload = () => {
+      let { width, height } = img;
+      
+      // Calculate new dimensions maintaining aspect ratio
+      if (width > MAX_IMAGE_WIDTH || height > MAX_IMAGE_HEIGHT) {
+        const ratio = Math.min(MAX_IMAGE_WIDTH / width, MAX_IMAGE_HEIGHT / height);
+        width = Math.round(width * ratio);
+        height = Math.round(height * ratio);
+      }
+      
+      canvas.width = width;
+      canvas.height = height;
+      
+      // Use white background for transparency (converts to JPEG)
+      ctx.fillStyle = '#FFFFFF';
+      ctx.fillRect(0, 0, width, height);
+      ctx.drawImage(img, 0, 0, width, height);
+      
+      // Start with initial quality and reduce if needed
+      let quality = INITIAL_QUALITY;
+      
+      const tryCompress = () => {
+        canvas.toBlob(
+          (blob) => {
+            if (!blob) {
+              reject(new Error('Compression failed'));
+              return;
+            }
+            
+            // If still too large and quality can be reduced, try again
+            if (blob.size > TARGET_FILE_SIZE && quality > 0.3) {
+              quality -= 0.1;
+              tryCompress();
+            } else {
+              console.log(`Image compressed: ${(file.size / 1024).toFixed(1)}KB -> ${(blob.size / 1024).toFixed(1)}KB (${Math.round(quality * 100)}% quality)`);
+              resolve(blob);
+            }
+          },
+          'image/jpeg',
+          quality
+        );
+      };
+      
+      tryCompress();
+    };
+    
+    img.onerror = () => reject(new Error('Failed to load image'));
+    img.src = URL.createObjectURL(file);
+  });
 }
 
 export async function uploadGiftImage(
@@ -24,18 +90,37 @@ export async function uploadGiftImage(
       return { success: false, error: 'Invalid file type. Please use JPG, PNG, GIF, or WebP.' };
     }
 
-    const maxSize = 5 * 1024 * 1024;
+    // Allow larger files since we'll compress them
+    const maxSize = 10 * 1024 * 1024; // 10MB input limit
     if (file.size > maxSize) {
-      return { success: false, error: 'File too large. Maximum size is 5MB.' };
+      return { success: false, error: 'File too large. Maximum size is 10MB.' };
     }
 
-    const fileName = `${sessionId}/${Date.now()}-${Math.random().toString(36).substring(7)}.${fileExt}`;
+    // Compress the image before upload
+    let uploadBlob: Blob;
+    let finalExt = 'jpg';
+    let contentType = 'image/jpeg';
+    let compressionSucceeded = false;
+    
+    try {
+      uploadBlob = await compressImage(file);
+      compressionSucceeded = true;
+    } catch (compressError) {
+      console.error('Compression failed, using original:', compressError);
+      uploadBlob = file;
+      // Preserve original file type when compression fails
+      finalExt = fileExt === 'jpeg' ? 'jpg' : fileExt;
+      contentType = file.type || `image/${fileExt}`;
+    }
+
+    const fileName = `${sessionId}/${Date.now()}-${Math.random().toString(36).substring(7)}.${compressionSucceeded ? 'jpg' : finalExt}`;
 
     const { data, error } = await supabase!.storage
       .from(STORAGE_BUCKET)
-      .upload(fileName, file, {
+      .upload(fileName, uploadBlob, {
         cacheControl: '3600',
-        upsert: false
+        upsert: false,
+        contentType: compressionSucceeded ? 'image/jpeg' : contentType
       });
 
     if (error) {
