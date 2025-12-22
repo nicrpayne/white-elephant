@@ -201,13 +201,91 @@ const AdminDashboard = () => {
   // Get values from context
   const { gifts, players, gameStatus, sessionCode, gameConfig } = gameState;
 
-  // Clear any existing session when creating a new game
-  // This ensures "Create Game" always starts fresh
+  // Track if we've shown the restore dialog
+  const [showRestoreDialog, setShowRestoreDialog] = useState(false);
+  const [hasCheckedSession, setHasCheckedSession] = useState(false);
+  const [lastSaved, setLastSaved] = useState<Date | null>(null);
+
+  // Check for existing admin session and offer to restore
   useEffect(() => {
-    // Clear existing session to start fresh when user clicks "Create Game"
+    if (hasCheckedSession) return;
+    
+    const checkExistingSession = async () => {
+      const stored = getStoredSessionInfo();
+      
+      if (stored && stored.isAdmin) {
+        // There's an existing admin session - show restore dialog
+        setShowRestoreDialog(true);
+        setHasCheckedSession(true);
+      } else {
+        // No existing session, start fresh
+        clearSession();
+        setIsRestoringSession(false);
+        setHasCheckedSession(true);
+      }
+    };
+    
+    checkExistingSession();
+  }, [hasCheckedSession, getStoredSessionInfo, clearSession]);
+
+  // Handle restoring the draft session
+  const handleRestoreDraft = async () => {
+    setShowRestoreDialog(false);
+    setIsRestoringSession(true);
+    
+    try {
+      const result = await restoreSession();
+      if (result.restored) {
+        toast({
+          title: "Draft restored!",
+          description: "Your previous session has been restored.",
+        });
+        // Determine which step we should be on based on session state
+        if (gameState.gameStatus === 'lobby' || gameState.gameStatus === 'active') {
+          setCurrentStep(3);
+        } else if (gameState.gifts.length > 0) {
+          setCurrentStep(1);
+        }
+        setLastSaved(new Date());
+      } else {
+        // Session no longer valid
+        clearSession();
+      }
+    } catch (error) {
+      console.error('Error restoring session:', error);
+      clearSession();
+    } finally {
+      setIsRestoringSession(false);
+    }
+  };
+
+  // Handle starting fresh
+  const handleStartFresh = () => {
+    setShowRestoreDialog(false);
     clearSession();
     setIsRestoringSession(false);
-  }, []);
+  };
+
+  // Auto-save indicator - update when session changes
+  useEffect(() => {
+    if (gameState.sessionId && hasCheckedSession) {
+      setLastSaved(new Date());
+    }
+  }, [gameState.sessionId, gameState.gifts.length, gameState.gameStatus, hasCheckedSession]);
+
+  // Warn before leaving if there's unsaved work
+  useEffect(() => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (gameState.sessionId && gameState.gameStatus !== 'ended') {
+        e.preventDefault();
+        e.returnValue = '';
+        return '';
+      }
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [gameState.sessionId, gameState.gameStatus]);
 
   // Auto-load players when in lobby status
   useEffect(() => {
@@ -844,6 +922,38 @@ const AdminDashboard = () => {
     );
   }
 
+  // Show restore dialog if there's an existing session
+  if (showRestoreDialog) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <Card className="max-w-md w-full mx-4">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Gift className="h-6 w-6" />
+              Resume Previous Session?
+            </CardTitle>
+            <CardDescription>
+              You have an unfinished game session. Would you like to continue where you left off or start fresh?
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="bg-muted p-4 rounded-lg">
+              <p className="text-sm text-muted-foreground">Your draft includes any gifts, settings, and player data you previously configured. Sessions are saved automatically and kept for 24 hours.</p>
+            </div>
+          </CardContent>
+          <CardFooter className="flex gap-3">
+            <Button variant="outline" onClick={handleStartFresh} className="flex-1">
+              Start Fresh
+            </Button>
+            <Button onClick={handleRestoreDraft} className="flex-1">
+              Resume Draft
+            </Button>
+          </CardFooter>
+        </Card>
+      </div>
+    );
+  }
+
   return (
     <div className="container mx-auto p-4 bg-background">
       <div className="flex justify-between items-center mb-6">
@@ -880,6 +990,12 @@ const AdminDashboard = () => {
           >
             {gameStatus.charAt(0).toUpperCase() + gameStatus.slice(1)}
           </Badge>
+          {lastSaved && gameState.sessionId && (
+            <div className="flex items-center gap-1 text-xs text-muted-foreground">
+              <Check className="h-3 w-3 text-green-500" />
+              <span>Auto-saved</span>
+            </div>
+          )}
         </div>
       </div>
 
