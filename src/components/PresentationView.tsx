@@ -343,7 +343,7 @@ export default function PresentationView() {
           schema: 'public',
           table: 'gifts',
         },
-        (payload) => {
+        async (payload) => {
           if (payload.eventType === 'UPDATE') {
             const updatedGift = payload.new as GiftData;
             
@@ -353,15 +353,38 @@ export default function PresentationView() {
               return;
             }
             
-            setGifts((prev) => {
-              // Find the old gift status from current state
-              const oldGift = prev.find(g => g.id === updatedGift.id);
-              const wasHidden = oldGift?.status === 'hidden';
+            // Check if this was a reveal (hidden -> revealed)
+            // If so, refetch the gift to ensure we have the latest image URL
+            let freshGiftData = updatedGift;
+            const currentGifts = await new Promise<GiftData[]>(resolve => {
+              setGifts(prev => {
+                resolve(prev);
+                return prev;
+              });
+            });
+            const oldGift = currentGifts.find(g => g.id === updatedGift.id);
+            const wasHidden = oldGift?.status === 'hidden';
+            
+            if (wasHidden && updatedGift.status === 'revealed') {
+              console.log('🎁 Gift revealed - refetching for latest image URL');
+              const { data: refetchedGift } = await supabase
+                .from('gifts')
+                .select('*')
+                .eq('id', updatedGift.id)
+                .single();
               
+              if (refetchedGift) {
+                freshGiftData = refetchedGift;
+                console.log('🎁 Refetched gift data:', { name: freshGiftData.name, image_url: freshGiftData.image_url });
+              }
+            }
+            
+            setGifts((prev) => {
               console.log('🎁 Gift update in PresentationView:', {
-                giftId: updatedGift.id,
+                giftId: freshGiftData.id,
                 wasHidden,
-                newStatus: updatedGift.status,
+                newStatus: freshGiftData.status,
+                hasImageUrl: !!freshGiftData.image_url,
                 stealAnimationActive: !!stealAnimationRef.current,
                 gameStatus: sessionRef.current?.game_status
               });
@@ -369,14 +392,14 @@ export default function PresentationView() {
               // Trigger reveal animation and jingle only if gift was just revealed from hidden (not stolen)
               // Steals have their own animation and sound via game_actions subscription
               // Don't show reveal animation if game has ended
-              if (wasHidden && updatedGift.status === 'revealed' && !stealAnimationRef.current && sessionRef.current?.game_status !== 'ended') {
+              if (wasHidden && freshGiftData.status === 'revealed' && !stealAnimationRef.current && sessionRef.current?.game_status !== 'ended') {
                 console.log('🎵 Triggering jingle for revealed gift');
-                setRevealedGiftId(updatedGift.id);
+                setRevealedGiftId(freshGiftData.id);
                 playJingleSound(); // Play jingle when gift is picked/revealed
                 setTimeout(() => setRevealedGiftId(null), 6000);
               }
               
-              return prev.map((g) => (g.id === updatedGift.id ? updatedGift : g));
+              return prev.map((g) => (g.id === freshGiftData.id ? freshGiftData : g));
             });
           }
         }
