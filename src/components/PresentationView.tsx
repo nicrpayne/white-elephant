@@ -549,6 +549,63 @@ export default function PresentationView() {
     return null;
   }
 
+  // Show waiting screen when game is in lobby/setup state
+  if (session?.game_status === 'lobby' || session?.game_status === 'setup') {
+    return (
+      <div className="h-screen bg-gradient-to-br from-red-50 via-green-50 to-blue-50 flex items-center justify-center p-8">
+        <Card className="w-full max-w-4xl">
+          <CardContent className="p-12 text-center">
+            <div className="mx-auto mb-8">
+              <img src="/elephant-icon.png" alt="White Elephant" className="h-32 w-32 mx-auto" />
+            </div>
+            <h1 className="text-5xl font-bold text-gray-800 mb-4">White Elephant</h1>
+            <p className="text-2xl text-gray-600 mb-8">Waiting for game to start...</p>
+            
+            <div className="bg-gradient-to-r from-green-100 to-emerald-100 rounded-2xl p-8 mb-8">
+              <p className="text-lg text-gray-600 mb-2">Join Code</p>
+              <p className="text-6xl font-mono font-bold text-green-600 tracking-wider">{sessionCode}</p>
+            </div>
+            
+            <div className="flex items-center justify-center gap-8 text-xl text-gray-600">
+              <div className="flex items-center gap-2">
+                <User className="h-6 w-6" />
+                <span>{players.length} player{players.length !== 1 ? 's' : ''} joined</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <GiftIcon className="h-6 w-6" />
+                <span>{gifts.length} gift{gifts.length !== 1 ? 's' : ''} added</span>
+              </div>
+            </div>
+
+            {players.length > 0 && (
+              <div className="mt-8">
+                <p className="text-lg text-gray-500 mb-4">Players in lobby:</p>
+                <div className="flex flex-wrap justify-center gap-3">
+                  {players.map((player) => (
+                    <div key={player.id} className="flex items-center gap-2 bg-white rounded-full px-4 py-2 shadow-sm border">
+                      <Avatar className="h-8 w-8">
+                        <AvatarImage src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${player.avatar_seed || player.display_name}`} />
+                        <AvatarFallback className="text-xs font-bold bg-green-100 text-green-700">
+                          {player.display_name.substring(0, 2).toUpperCase()}
+                        </AvatarFallback>
+                      </Avatar>
+                      <span className="font-medium">{player.display_name}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+            
+            <div className="mt-8 flex items-center justify-center gap-2 text-green-600">
+              <div className="h-3 w-3 rounded-full bg-green-500 animate-pulse" />
+              <span className="text-lg">The host will start the game soon</span>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
   // If game has ended, show results screen with game board
   if (session?.game_status === 'ended') {
     return (
