@@ -28,17 +28,16 @@ export default function ConnectionStatus({ onRefresh, showRefreshButton = true }
       setIsOnline(false);
     };
     
+    const handleRealtimeConnected = () => {
+      setRealtimeStatus('connected');
+      setLastError(null);
+      setShowSuccess(true);
+      setTimeout(() => setShowSuccess(false), 3000);
+    };
+    
     const handleRealtimeIssue = (event: CustomEvent) => {
       setRealtimeStatus('error');
-      setLastError(event.detail?.error || 'Connection issue');
-      
-      // Auto-clear error after 10 seconds if it resolves
-      setTimeout(() => {
-        if (navigator.onLine) {
-          setRealtimeStatus('connected');
-          setLastError(null);
-        }
-      }, 10000);
+      setLastError(event.detail?.error || 'Connection issue - attempting to reconnect...');
     };
     
     const handlePartialFailure = (event: CustomEvent) => {
@@ -49,11 +48,13 @@ export default function ConnectionStatus({ onRefresh, showRefreshButton = true }
     
     const handleRefreshComplete = () => {
       setShowSuccess(true);
+      setRealtimeStatus('connected');
       setTimeout(() => setShowSuccess(false), 3000);
     };
 
     window.addEventListener('online', handleOnline);
     window.addEventListener('offline', handleOffline);
+    window.addEventListener('realtimeConnected', handleRealtimeConnected);
     window.addEventListener('realtimeConnectionIssue', handleRealtimeIssue as EventListener);
     window.addEventListener('giftInsertPartialFailure', handlePartialFailure as EventListener);
     window.addEventListener('gameStateRefreshed', handleRefreshComplete);
@@ -61,6 +62,7 @@ export default function ConnectionStatus({ onRefresh, showRefreshButton = true }
     return () => {
       window.removeEventListener('online', handleOnline);
       window.removeEventListener('offline', handleOffline);
+      window.removeEventListener('realtimeConnected', handleRealtimeConnected);
       window.removeEventListener('realtimeConnectionIssue', handleRealtimeIssue as EventListener);
       window.removeEventListener('giftInsertPartialFailure', handlePartialFailure as EventListener);
       window.removeEventListener('gameStateRefreshed', handleRefreshComplete);

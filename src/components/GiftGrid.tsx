@@ -128,7 +128,11 @@ const GiftCard = ({ gift, giftNumber, onClick, isSelectable }: GiftCardProps) =>
                 <img
                   src={gift.imageUrl}
                   alt={gift.name}
+                  loading="lazy"
                   className="h-full w-full object-contain"
+                  onError={(e) => {
+                    e.currentTarget.src = 'https://images.unsplash.com/photo-1513885535751-8b9238bd345a?w=400&q=80';
+                  }}
                 />
               ) : (
                 <div className="bg-muted flex items-center justify-center h-full w-full">
@@ -144,7 +148,7 @@ const GiftCard = ({ gift, giftNumber, onClick, isSelectable }: GiftCardProps) =>
               )}
               
               {/* Steals Left indicator - top left for revealed gifts */}
-              {gift.status !== "hidden" && gift.status !== "locked" && gift.status !== "final" && gift.stealCount < 2 && (
+              {gift.status !== "locked" && gift.status !== "final" && gift.stealCount < 2 && (
                 <div className="absolute top-1 left-1 bg-blue-500 text-white px-1.5 py-0.5 rounded-full text-xs font-bold">
                   {2 - gift.stealCount} steal{2 - gift.stealCount !== 1 ? 's' : ''} left
                 </div>

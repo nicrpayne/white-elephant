@@ -8,8 +8,10 @@ import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Separator } from '@/components/ui/separator';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
-import { Loader2, Plus, ExternalLink, Edit, Trash2, Grid3x3, List, GripVertical } from 'lucide-react';
+import { Loader2, Plus, ExternalLink, Edit, Trash2, Grid3x3, List, GripVertical, Upload } from 'lucide-react';
 import BulkGiftLoader from '@/components/BulkGiftLoader';
+import { uploadGiftImage, isDataUrl } from '@/lib/imageUpload';
+import { useToast } from '@/components/ui/use-toast';
 
 interface Gift {
   id: string;
@@ -29,6 +31,7 @@ interface PreviewData {
 
 interface GiftManagementTabProps {
   gifts: Gift[];
+  sessionId?: string | null;
   addGiftAsync: (gift: { name: string; imageUrl: string; link: string; description: string }) => Promise<void>;
   addGiftsBatchAsync: (gifts: { name: string; imageUrl: string; link: string; description: string }[]) => Promise<void>;
   removeGift: (giftId: string) => void;
@@ -38,12 +41,15 @@ interface GiftManagementTabProps {
 
 export default function GiftManagementTab({
   gifts,
+  sessionId,
   addGiftAsync,
   addGiftsBatchAsync,
   removeGift,
   updateGift,
   reorderGifts
 }: GiftManagementTabProps) {
+  const { toast } = useToast();
+  
   // State for adding new gift
   const [newGiftUrl, setNewGiftUrl] = useState("");
   const [isLoadingPreview, setIsLoadingPreview] = useState(false);
@@ -53,6 +59,7 @@ export default function GiftManagementTab({
   const [editingImageUrl, setEditingImageUrl] = useState("");
   const [showImageEdit, setShowImageEdit] = useState(false);
   const [editingGiftId, setEditingGiftId] = useState<string | null>(null);
+  const [isUploadingImage, setIsUploadingImage] = useState(false);
   
   // State for gift list view
   const [viewMode, setViewMode] = useState<"grid" | "list">("list");
@@ -244,28 +251,90 @@ export default function GiftManagementTab({
     }
   };
 
-  // Handle image upload
+  // Handle image upload - uploads to Supabase Storage when sessionId is available
   const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>, isPreview: boolean) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    // Create a local URL for the image
-    const reader = new FileReader();
-    reader.onloadend = () => {
-      const imageUrl = reader.result as string;
-      
-      if (isPreview && previewData) {
-        setPreviewData({
-          ...previewData,
-          image: imageUrl
-        });
-      } else if (editingGiftId) {
-        updateGift(editingGiftId, { imageUrl });
-        setShowImageEdit(false);
-        setEditingGiftId(null);
+    setIsUploadingImage(true);
+
+    try {
+      // If we have a sessionId, upload to Supabase Storage
+      if (sessionId) {
+        const result = await uploadGiftImage(file, sessionId);
+        
+        if (result.success && result.url) {
+          if (isPreview && previewData) {
+            setPreviewData({
+              ...previewData,
+              image: result.url
+            });
+          } else if (editingGiftId) {
+            updateGift(editingGiftId, { imageUrl: result.url });
+            setShowImageEdit(false);
+            setEditingGiftId(null);
+          }
+          
+          toast({
+            title: "Image uploaded",
+            description: "Your image has been uploaded successfully.",
+          });
+        } else {
+          // Fall back to data URL if storage upload fails
+          console.warn('Storage upload failed, falling back to data URL:', result.error);
+          toast({
+            title: "Upload notice",
+            description: result.error || "Using local image. For best results, try a smaller image.",
+            variant: "destructive",
+          });
+          
+          // Fall back to data URL
+          const reader = new FileReader();
+          reader.onloadend = () => {
+            const imageUrl = reader.result as string;
+            
+            if (isPreview && previewData) {
+              setPreviewData({
+                ...previewData,
+                image: imageUrl
+              });
+            } else if (editingGiftId) {
+              updateGift(editingGiftId, { imageUrl });
+              setShowImageEdit(false);
+              setEditingGiftId(null);
+            }
+          };
+          reader.readAsDataURL(file);
+        }
+      } else {
+        // No sessionId, use data URL (fallback for initial setup)
+        const reader = new FileReader();
+        reader.onloadend = () => {
+          const imageUrl = reader.result as string;
+          
+          if (isPreview && previewData) {
+            setPreviewData({
+              ...previewData,
+              image: imageUrl
+            });
+          } else if (editingGiftId) {
+            updateGift(editingGiftId, { imageUrl });
+            setShowImageEdit(false);
+            setEditingGiftId(null);
+          }
+        };
+        reader.readAsDataURL(file);
       }
-    };
-    reader.readAsDataURL(file);
+    } catch (err) {
+      console.error('Image upload error:', err);
+      toast({
+        title: "Upload failed",
+        description: "Failed to upload image. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsUploadingImage(false);
+    }
   };
 
   // Handle removing gift

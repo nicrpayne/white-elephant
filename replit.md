@@ -17,7 +17,7 @@ src/
 │   ├── ui/         # shadcn/ui components
 │   └── *.tsx       # Application components
 ├── contexts/       # React contexts (GameContext)
-├── lib/            # Utility libraries (supabase, utils)
+├── lib/            # Utility libraries (supabase, utils, imageUpload)
 ├── stories/        # Component stories
 ├── types/          # TypeScript types
 ├── App.tsx         # Main application component
@@ -35,8 +35,54 @@ supabase/
 ## Development
 The app runs on port 5000 with Vite dev server.
 
+## Supabase Setup Notes
+After deploying, run the following migrations in your Supabase dashboard:
+1. `20240101_white_elephant_schema.sql` - Base schema
+2. `20240102_disable_rls.sql` through `20240109_backfill_gift_positions.sql` - Additional features
+3. `20240110_atomic_game_actions.sql` - Atomic RPC functions for game actions (IMPORTANT for production)
+
+**Storage Bucket**: Create a storage bucket named `gift-images` with public access for gift image uploads.
+
 ## Recent Changes
-- December 22, 2025: Initial import and Replit environment setup
-  - Configured Vite to allow all hosts for Replit proxy
-  - Set server to bind to 0.0.0.0:5000
-  - Made Supabase initialization graceful when credentials are missing
+
+### December 22, 2025: Scalability & Reliability Improvements
+Major improvements for handling 20+ concurrent players:
+
+1. **Atomic Game Actions (Server-side RPC)**
+   - Created database functions `pick_gift`, `steal_gift`, `keep_gift` that handle all updates atomically
+   - Prevents race conditions when multiple players act simultaneously
+   - All validation and state transitions happen in a single transaction
+
+2. **Connection Resilience**
+   - Added connection status tracking with auto-reconnect
+   - Exponential backoff for reconnection attempts
+   - Full state reload after any connection interruption
+   - ConnectionStatus component shows users when connection is lost/restored
+
+3. **Bulk Gift Loading Improvements**
+   - Added concurrency limit (3 simultaneous fetches) to prevent browser overwhelm
+   - Better error handling for individual URL failures
+   - Deduplication of URLs
+
+4. **Image Handling**
+   - Added Supabase Storage integration for gift image uploads
+   - Images uploaded directly to storage instead of using data URLs
+   - Lazy loading for gift images to improve performance
+   - Fallback handling for broken image URLs
+
+5. **Connection Handling**
+   - Improved real-time subscription with status events
+   - Automatic state refresh on reconnection
+   - Health check every 30 seconds during active games
+
+### December 22, 2025: Initial Setup
+- Configured Vite to allow all hosts for Replit proxy
+- Set server to bind to 0.0.0.0:5000
+- Made Supabase initialization graceful when credentials are missing
+
+## User Preferences
+- None documented yet
+
+## Known Limitations
+- Supabase Storage bucket must be manually created in dashboard
+- RPC functions must be deployed via Supabase migrations

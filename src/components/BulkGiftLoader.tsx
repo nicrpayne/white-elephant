@@ -231,11 +231,65 @@ export default function BulkGiftLoader({ onAddGifts }: BulkGiftLoaderProps) {
     });
     setBulkPreviews([...previews]);
 
-    // Fetch previews one by one
-    for (let i = 0; i < urls.length; i++) {
-      const preview = await fetchPreviewForUrl(urls[i]);
-      previews[i] = preview;
-      setBulkPreviews([...previews]);
+    // Process URLs with concurrency limit to avoid overwhelming browser/network
+    const CONCURRENCY_LIMIT = 3;
+    const urlToFirstIndex = new Map<string, number>();
+    
+    // Map each URL to its first occurrence index for deduplication
+    urls.forEach((url, index) => {
+      if (!urlToFirstIndex.has(url)) {
+        urlToFirstIndex.set(url, index);
+      }
+    });
+    
+    for (let i = 0; i < urls.length; i += CONCURRENCY_LIMIT) {
+      const batch = urls.slice(i, Math.min(i + CONCURRENCY_LIMIT, urls.length));
+      
+      // Process batch in parallel with concurrency limit
+      const batchPromises = batch.map(async (url, batchIndex) => {
+        const actualIndex = i + batchIndex;
+        const firstIndex = urlToFirstIndex.get(url);
+        
+        // If this is a duplicate, copy from the first occurrence
+        if (firstIndex !== undefined && firstIndex < actualIndex) {
+          // Wait for the first one to complete, then copy its result
+          const waitForFirst = async () => {
+            let attempts = 0;
+            while (previews[firstIndex].status === 'loading' && attempts < 100) {
+              await new Promise(resolve => setTimeout(resolve, 100));
+              attempts++;
+            }
+            previews[actualIndex] = { ...previews[firstIndex] };
+            setBulkPreviews([...previews]);
+          };
+          await waitForFirst();
+          return;
+        }
+        
+        try {
+          const preview = await fetchPreviewForUrl(url);
+          previews[actualIndex] = preview;
+          setBulkPreviews([...previews]);
+        } catch (err) {
+          console.error(`Failed to fetch preview for ${url}:`, err);
+          previews[actualIndex] = {
+            url,
+            title: 'Gift Item',
+            description: 'Could not fetch preview',
+            image: 'https://images.unsplash.com/photo-1513885535751-8b9238bd345a?w=400&q=80',
+            status: 'error',
+            approved: false,
+          };
+          setBulkPreviews([...previews]);
+        }
+      });
+      
+      await Promise.all(batchPromises);
+      
+      // Small delay between batches to be gentle on network
+      if (i + CONCURRENCY_LIMIT < urls.length) {
+        await new Promise(resolve => setTimeout(resolve, 200));
+      }
     }
 
     setIsBulkLoading(false);

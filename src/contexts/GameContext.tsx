@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useRef, ReactNode, useCallback } from "react";
-import { supabase, DBGameSession, DBPlayer, DBGift, withRetry } from "@/lib/supabase";
-import { RealtimeChannel } from "@supabase/supabase-js";
+import { supabase, supabaseConfigured, DBGameSession, DBPlayer, DBGift, withRetry } from "@/lib/supabase";
+import { RealtimeChannel, REALTIME_SUBSCRIBE_STATES } from "@supabase/supabase-js";
 import { storeSession, getStoredSession, clearStoredSession, refreshSessionTimestamp } from "@/lib/sessionStorage";
 
 // Debounce utility
@@ -123,6 +123,9 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
 
   const [isLoading, setIsLoading] = useState(true); // Start as true to handle initial session check
   const [realtimeChannel, setRealtimeChannel] = useState<RealtimeChannel | null>(null);
+  const [connectionStatus, setConnectionStatus] = useState<'connected' | 'connecting' | 'disconnected'>('connecting');
+  const reconnectAttemptRef = useRef(0);
+  const maxReconnectAttempts = 5;
   
   // Track previous gift states to detect changes
   const previousGiftsRef = useRef<Map<string, { status: string; ownerId: string | null }>>(new Map());
@@ -276,18 +279,38 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
         console.log('Subscription status:', status, err || '');
         if (status === 'SUBSCRIBED') {
           console.log('✅ Successfully subscribed to real-time updates');
+          setConnectionStatus('connected');
+          reconnectAttemptRef.current = 0;
           // Refresh data when connection is re-established
           loadSession(gameState.sessionId!);
           loadPlayers(gameState.sessionId!);
           loadGifts(gameState.sessionId!);
+          // Notify UI of successful reconnection
+          window.dispatchEvent(new CustomEvent('realtimeConnected'));
         } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
           console.warn('⚠️ Realtime connection issue:', status, err);
+          setConnectionStatus('disconnected');
           // Dispatch event so UI can show connection status
           window.dispatchEvent(new CustomEvent('realtimeConnectionIssue', { 
             detail: { status, error: err } 
           }));
+          // Attempt reconnection with exponential backoff
+          if (reconnectAttemptRef.current < maxReconnectAttempts) {
+            const delay = Math.min(1000 * Math.pow(2, reconnectAttemptRef.current), 30000);
+            reconnectAttemptRef.current++;
+            console.log(`🔄 Attempting reconnect in ${delay}ms (attempt ${reconnectAttemptRef.current})`);
+            setTimeout(() => {
+              if (gameState.sessionId) {
+                console.log('🔄 Triggering full state reload after reconnect attempt');
+                loadSession(gameState.sessionId);
+                loadPlayers(gameState.sessionId);
+                loadGifts(gameState.sessionId);
+              }
+            }, delay);
+          }
         } else if (status === 'CLOSED') {
           console.warn('📡 Realtime channel closed, will attempt reconnect');
+          setConnectionStatus('disconnected');
         }
       });
 
@@ -1090,308 +1113,163 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
     }
   };
 
-  // Pick a hidden gift
+  // Pick a hidden gift - uses atomic RPC function
   const pickGift = async (giftId: string) => {
     if (!gameState.sessionId || !gameState.activePlayerId) return;
 
     try {
-      // Check if current player has already completed their turn (but allow in final round)
-      const currentPlayer = gameState.players.find(p => p.id === gameState.activePlayerId);
-      if (currentPlayer?.hasCompletedTurn && !gameState.isFinalRound) {
-        console.log('Player has already completed their turn');
-        throw new Error('You have already picked a gift this round');
+      console.log('🎁 Picking gift via RPC:', giftId);
+      
+      // Use atomic RPC function to prevent race conditions
+      const { data, error } = await supabase.rpc('pick_gift', {
+        p_session_id: gameState.sessionId,
+        p_player_id: gameState.activePlayerId,
+        p_gift_id: giftId
+      });
+
+      if (error) {
+        console.error('RPC pick_gift error:', error);
+        throw error;
       }
 
-      // Update gift status to revealed and assign to current player - with retry
-      await withRetry(async () => {
-        const { error } = await supabase
-          .from('gifts')
-          .update({
-            status: 'revealed',
-            current_owner_id: gameState.activePlayerId,
-          })
-          .eq('id', giftId);
-        
-        if (error) throw error;
-      }, 3, 500);
+      const result = data as { success: boolean; error?: string; action?: string; gift_id?: string; next_player_id?: string };
+      
+      if (!result.success) {
+        throw new Error(result.error || 'Failed to pick gift');
+      }
+
+      console.log('✅ Pick gift result:', result);
 
       // Play jingle sound for gift picking
       console.log('🎵 pickGift: Dispatching giftPickedSound event for gift:', giftId);
       window.dispatchEvent(new CustomEvent('giftPickedSound', { detail: { giftId } }));
 
-      // Update player's current gift - with retry
-      await withRetry(async () => {
-        const { error } = await supabase
-          .from('players')
-          .update({
-            current_gift_id: giftId,
-            has_completed_turn: true,
-          })
-          .eq('id', gameState.activePlayerId);
-        
-        if (error) throw error;
-      }, 3, 500);
-
-      // If we're in the final round and someone picks a new gift, the game ends
-      if (gameState.isFinalRound) {
-        console.log('Final round: Player picked a new gift, game ends');
-        await supabase
-          .from('game_sessions')
-          .update({
-            game_status: 'ended',
-            active_player_id: null,
-            is_final_round: false,
-          })
-          .eq('id', gameState.sessionId);
-        return;
+      // Handle different outcomes
+      if (result.action === 'game_ended') {
+        window.dispatchEvent(new CustomEvent('gameEnded', { detail: { reason: 'finalRoundPick' } }));
+      } else if (result.action === 'final_round_started') {
+        window.dispatchEvent(new CustomEvent('finalRoundStarted', { 
+          detail: { firstPlayerId: result.next_player_id } 
+        }));
       }
 
-      // Find next player who hasn't completed their turn
-      // Reload players to get fresh data
-      const { data: players } = await supabase
-        .from('players')
-        .select('*')
-        .eq('session_id', gameState.sessionId)
-        .order('order_index');
-
-      if (!players) return;
-
-      // Find next player who hasn't completed their initial turn
-      const currentPlayerIndex = players.findIndex(p => p.id === gameState.activePlayerId);
-      let nextPlayerId = null;
-
-      // Look for next player who hasn't completed turn (starting from current position)
-      for (let i = 1; i <= players.length; i++) {
-        const checkIndex = (currentPlayerIndex + i) % players.length;
-        const player = players[checkIndex];
-        if (!player.has_completed_turn) {
-          nextPlayerId = player.id;
-          break;
-        }
-      }
-
-      // If all players have completed their turn, start the final round
-      // The first player gets one more chance to steal or keep their gift
-      if (!nextPlayerId) {
-        // Get the session to find the first player
-        const { data: session } = await supabase
-          .from('game_sessions')
-          .select('first_player_id')
-          .eq('id', gameState.sessionId)
-          .single();
-
-        if (session?.first_player_id) {
-          console.log('All players done - starting final round for first player');
-          await supabase
-            .from('game_sessions')
-            .update({
-              is_final_round: true,
-              active_player_id: session.first_player_id,
-            })
-            .eq('id', gameState.sessionId);
-          
-          // Dispatch event for final round notification
-          window.dispatchEvent(new CustomEvent('finalRoundStarted', { 
-            detail: { firstPlayerId: session.first_player_id } 
-          }));
-        } else {
-          // Fallback: end game if no first player found
-          await supabase
-            .from('game_sessions')
-            .update({
-              game_status: 'ended',
-              active_player_id: null,
-            })
-            .eq('id', gameState.sessionId);
-        }
-      } else {
-        await supabase
-          .from('game_sessions')
-          .update({
-            active_player_id: nextPlayerId,
-          })
-          .eq('id', gameState.sessionId);
-      }
+      // Reload state to reflect changes (realtime will also update, but this ensures immediate feedback)
+      await Promise.all([
+        loadSession(gameState.sessionId),
+        loadPlayers(gameState.sessionId),
+        loadGifts(gameState.sessionId)
+      ]);
     } catch (error) {
       console.error('Error picking gift:', error);
       throw error;
     }
   };
 
-  // Steal a revealed gift
+  // Steal a revealed gift - uses atomic RPC function
   const stealGift = async (giftId: string) => {
     if (!gameState.sessionId || !gameState.activePlayerId) return;
 
     try {
-      // Check if current player has already completed their turn (but allow in final round)
-      const currentPlayer = gameState.players.find(p => p.id === gameState.activePlayerId);
-      if (currentPlayer?.hasCompletedTurn && !gameState.isFinalRound) {
-        console.log('Player has already completed their turn');
-        throw new Error('You have already taken your turn this round');
-      }
-
+      console.log('🎭 Stealing gift via RPC:', giftId);
+      
+      // Get player names for the notification before the RPC call
       const gift = gameState.gifts.find(g => g.id === giftId);
-      if (!gift || !gift.currentOwnerId) return;
-
-      const previousOwnerId = gift.currentOwnerId;
-
-      // Check for immediate steal-back if the rule is disabled
-      if (!gameState.gameConfig.allowImmediateStealback) {
-        // Query the most recent steal action for this gift
-        const { data: lastStealAction, error: actionError } = await supabase
-          .from('game_actions')
-          .select('*')
-          .eq('session_id', gameState.sessionId)
-          .eq('gift_id', giftId)
-          .eq('action_type', 'steal')
-          .order('created_at', { ascending: false })
-          .limit(1)
-          .single();
-
-        if (actionError && actionError.code !== 'PGRST116') {
-          console.error('Error checking last steal action:', actionError);
-        }
-
-        // If the last steal was FROM the current player, don't allow immediate steal-back
-        if (lastStealAction && lastStealAction.previous_owner_id === gameState.activePlayerId) {
-          throw new Error('You cannot immediately steal back a gift that was just stolen from you');
-        }
-      }
-      const newStealCount = gift.stealCount + 1;
-      
-      // Get player names for the notification
       const stealer = gameState.players.find(p => p.id === gameState.activePlayerId);
-      const victim = gameState.players.find(p => p.id === previousOwnerId);
+      const victim = gift?.currentOwnerId ? gameState.players.find(p => p.id === gift.currentOwnerId) : null;
       
-      // Check if the stealer already has a gift (for swap during final round)
-      const stealerCurrentGiftId = currentPlayer?.currentGiftId;
-      const stealerCurrentGift = stealerCurrentGiftId 
-        ? gameState.gifts.find(g => g.id === stealerCurrentGiftId) 
-        : null;
+      // Use atomic RPC function to prevent race conditions
+      const { data, error } = await supabase.rpc('steal_gift', {
+        p_session_id: gameState.sessionId,
+        p_player_id: gameState.activePlayerId,
+        p_gift_id: giftId
+      });
 
-      // Log the steal action to game_actions table - with retry
-      await withRetry(async () => {
-        const { error } = await supabase
-          .from('game_actions')
-          .insert({
-            session_id: gameState.sessionId,
-            player_id: gameState.activePlayerId,
-            action_type: 'steal',
-            gift_id: giftId,
-            previous_owner_id: previousOwnerId,
-          });
-        
-        if (error) throw error;
-      }, 3, 500);
+      if (error) {
+        console.error('RPC steal_gift error:', error);
+        throw error;
+      }
 
-      // Update stolen gift - assign to new owner and increment steal count - with retry
-      await withRetry(async () => {
-        const { error } = await supabase
-          .from('gifts')
-          .update({
-            current_owner_id: gameState.activePlayerId,
-            steal_count: newStealCount,
-            status: newStealCount >= 2 ? 'locked' : 'revealed',
-          })
-          .eq('id', giftId);
-        
-        if (error) throw error;
-      }, 3, 500);
+      const result = data as { 
+        success: boolean; 
+        error?: string; 
+        action?: string; 
+        gift_id?: string; 
+        gift_name?: string;
+        previous_owner_id?: string;
+        steals_remaining?: number;
+        is_locked?: boolean;
+        next_player_id?: string 
+      };
+      
+      if (!result.success) {
+        throw new Error(result.error || 'Failed to steal gift');
+      }
+
+      console.log('✅ Steal gift result:', result);
 
       // Play steal sound
       console.log('🎭 stealGift: Dispatching giftStolenSound event for gift:', giftId);
       window.dispatchEvent(new CustomEvent('giftStolenSound', { detail: { giftId } }));
-
-      // If stealer had a gift, transfer it to the victim (swap)
-      if (stealerCurrentGiftId && stealerCurrentGift) {
-        console.log('Final round swap: transferring gift', stealerCurrentGiftId, 'to victim', previousOwnerId);
-        
-        // Update the stealer's old gift to belong to the victim
-        await supabase
-          .from('gifts')
-          .update({
-            current_owner_id: previousOwnerId,
-          })
-          .eq('id', stealerCurrentGiftId);
-        
-        // Update victim to have the stealer's old gift
-        await supabase
-          .from('players')
-          .update({
-            current_gift_id: stealerCurrentGiftId,
-            has_completed_turn: false,
-          })
-          .eq('id', previousOwnerId);
-      } else {
-        // No swap needed - just clear previous owner's gift
-        await supabase
-          .from('players')
-          .update({
-            current_gift_id: null,
-            has_completed_turn: false,
-          })
-          .eq('id', previousOwnerId);
-      }
-
-      // Update current player's gift
-      await supabase
-        .from('players')
-        .update({
-          current_gift_id: giftId,
-          has_completed_turn: true,
-        })
-        .eq('id', gameState.activePlayerId);
         
       // Dispatch steal event for notification
       window.dispatchEvent(new CustomEvent('giftStolen', { 
         detail: { 
-          giftName: gift.name,
+          giftName: result.gift_name || gift?.name || 'Gift',
           stealerName: stealer?.displayName || 'Someone',
           victimName: victim?.displayName || 'Someone',
-          stealsRemaining: 2 - newStealCount,
-          isLocked: newStealCount >= 2,
-          isFinalRound: gameState.isFinalRound
+          stealsRemaining: result.steals_remaining ?? 0,
+          isLocked: result.is_locked ?? false,
+          isFinalRound: gameState.isFinalRound,
+          giftId: giftId,
+          giftImageUrl: gift?.imageUrl
         } 
       }));
 
-      // Previous owner gets the next turn (this continues the final round chain)
-      await supabase
-        .from('game_sessions')
-        .update({
-          active_player_id: previousOwnerId,
-        })
-        .eq('id', gameState.sessionId);
+      // Reload state to reflect changes
+      await Promise.all([
+        loadSession(gameState.sessionId),
+        loadPlayers(gameState.sessionId),
+        loadGifts(gameState.sessionId)
+      ]);
     } catch (error) {
       console.error('Error stealing gift:', error);
       throw error;
     }
   };
 
-  // Keep current gift (used in final round to end the game)
+  // Keep current gift (used in final round to end the game) - uses atomic RPC function
   const keepGift = async () => {
     if (!gameState.sessionId || !gameState.activePlayerId) return;
 
     try {
-      // Only allow keeping gift during final round
-      if (!gameState.isFinalRound) {
-        throw new Error('Can only keep gift during final round');
+      console.log('🎁 Keeping gift via RPC');
+      
+      // Use atomic RPC function
+      const { data, error } = await supabase.rpc('keep_gift', {
+        p_session_id: gameState.sessionId,
+        p_player_id: gameState.activePlayerId
+      });
+
+      if (error) {
+        console.error('RPC keep_gift error:', error);
+        throw error;
       }
 
-      console.log('Player chose to keep their gift - ending game');
+      const result = data as { success: boolean; error?: string; action?: string; reason?: string };
       
-      await supabase
-        .from('game_sessions')
-        .update({
-          game_status: 'ended',
-          active_player_id: null,
-          is_final_round: false,
-        })
-        .eq('id', gameState.sessionId);
+      if (!result.success) {
+        throw new Error(result.error || 'Failed to keep gift');
+      }
+
+      console.log('✅ Keep gift result:', result);
 
       // Dispatch event for game ended
       window.dispatchEvent(new CustomEvent('gameEnded', { 
         detail: { reason: 'playerKeptGift' } 
       }));
+
+      // Reload state to reflect changes
+      await loadSession(gameState.sessionId);
     } catch (error) {
       console.error('Error keeping gift:', error);
       throw error;
