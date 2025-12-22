@@ -1054,7 +1054,34 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
 
       console.log('Original player order:', players.map(p => ({ name: p.display_name, order: p.order_index })));
 
-      // Randomize if configured
+      // Always randomize gift positions so admin can play fairly
+      console.log('Randomizing gift positions...');
+      const { data: gifts } = await supabase
+        .from('gifts')
+        .select('id, name, position')
+        .eq('session_id', gameState.sessionId)
+        .order('position');
+
+      if (gifts && gifts.length > 0) {
+        // Fisher-Yates shuffle for gifts
+        const shuffledGifts = [...gifts];
+        for (let i = shuffledGifts.length - 1; i > 0; i--) {
+          const j = Math.floor(Math.random() * (i + 1));
+          [shuffledGifts[i], shuffledGifts[j]] = [shuffledGifts[j], shuffledGifts[i]];
+        }
+        
+        console.log('New gift order:', shuffledGifts.map((g, idx) => ({ name: g.name, newPosition: idx + 1 })));
+        
+        // Update gift positions in database
+        for (let i = 0; i < shuffledGifts.length; i++) {
+          await supabase
+            .from('gifts')
+            .update({ position: i + 1 })
+            .eq('id', shuffledGifts[i].id);
+        }
+      }
+
+      // Randomize players if configured
       if (gameState.gameConfig.randomizeOrder) {
         console.log('Randomizing player order...');
         
