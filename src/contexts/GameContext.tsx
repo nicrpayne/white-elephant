@@ -129,6 +129,69 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
   
   // Track previous gift states to detect changes
   const previousGiftsRef = useRef<Map<string, { status: string; ownerId: string | null }>>(new Map());
+  
+  // Debounced full reload ref for catching missed updates
+  const debouncedReloadRef = useRef<NodeJS.Timeout | null>(null);
+  const playersRef = useRef<Player[]>([]);
+  
+  // Keep playersRef in sync with gameState.players
+  useEffect(() => {
+    playersRef.current = gameState.players;
+  }, [gameState.players]);
+
+  // Apply incremental gift update from realtime payload
+  const applyGiftUpdate = (dbGift: DBGift, eventType: string) => {
+    setGameState(prev => {
+      let newGifts = [...prev.gifts];
+      
+      if (eventType === 'INSERT') {
+        // Add new gift if not already present
+        if (!newGifts.find(g => g.id === dbGift.id)) {
+          const ownerPlayer = playersRef.current.find(p => p.id === dbGift.current_owner_id);
+          newGifts.push({
+            id: dbGift.id,
+            name: dbGift.name,
+            imageUrl: dbGift.image_url,
+            link: dbGift.link || undefined,
+            description: dbGift.description || undefined,
+            status: dbGift.status,
+            stealCount: dbGift.steal_count,
+            currentOwnerId: dbGift.current_owner_id,
+            ownerName: ownerPlayer?.displayName,
+            ownerAvatarSeed: ownerPlayer?.avatarSeed,
+          });
+        }
+      } else if (eventType === 'UPDATE') {
+        // Update existing gift in place
+        const ownerPlayer = playersRef.current.find(p => p.id === dbGift.current_owner_id);
+        newGifts = newGifts.map(g => 
+          g.id === dbGift.id ? {
+            ...g,
+            name: dbGift.name,
+            imageUrl: dbGift.image_url,
+            link: dbGift.link || undefined,
+            description: dbGift.description || undefined,
+            status: dbGift.status,
+            stealCount: dbGift.steal_count,
+            currentOwnerId: dbGift.current_owner_id,
+            ownerName: ownerPlayer?.displayName,
+            ownerAvatarSeed: ownerPlayer?.avatarSeed,
+          } : g
+        );
+      } else if (eventType === 'DELETE') {
+        // Remove deleted gift
+        newGifts = newGifts.filter(g => g.id !== dbGift.id);
+      }
+      
+      return { ...prev, gifts: newGifts };
+    });
+    
+    // Update previous state ref
+    previousGiftsRef.current.set(dbGift.id, {
+      status: dbGift.status,
+      ownerId: dbGift.current_owner_id
+    });
+  };
 
   // Subscribe to real-time updates when sessionId changes
   useEffect(() => {
@@ -165,6 +228,11 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
         (payload) => {
           console.log('Gifts table changed:', payload);
           
+          const dbGift = (payload.eventType === 'DELETE' ? payload.old : payload.new) as DBGift;
+          
+          // Apply incremental update immediately (no full reload)
+          applyGiftUpdate(dbGift, payload.eventType);
+          
           // Check if a gift was just revealed (picked) or stolen
           if (payload.eventType === 'UPDATE') {
             const newGift = payload.new as DBGift;
@@ -196,54 +264,39 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
                 detail: { giftId: newGift.id } 
               }));
               
-              // Also dispatch giftStolen with details for the animation overlay
-              // Fetch player names for the animation
-              const fetchStealDetails = async () => {
-                try {
-                  const { data: playersData } = await supabase
-                    .from('players')
-                    .select('id, display_name')
-                    .eq('session_id', gameState.sessionId!);
-                  
-                  if (playersData) {
-                    const stealer = playersData.find(p => p.id === newGift.current_owner_id);
-                    const victim = playersData.find(p => p.id === prevState.ownerId);
-                    
-                    console.log('🎭 Dispatching giftStolen event from realtime:', { 
-                      giftName: newGift.name, 
-                      stealerName: stealer?.display_name,
-                      victimName: victim?.display_name 
-                    });
-                    
-                    window.dispatchEvent(new CustomEvent('giftStolen', {
-                      detail: {
-                        giftName: newGift.name,
-                        stealerName: stealer?.display_name || 'Someone',
-                        victimName: victim?.display_name || 'Someone',
-                        stealsRemaining: 2 - (newGift.steal_count || 0),
-                        isLocked: newGift.status === 'locked' || (newGift.steal_count || 0) >= 2,
-                        giftId: newGift.id,
-                        giftImageUrl: newGift.image_url
-                      }
-                    }));
-                  }
-                } catch (err) {
-                  console.error('Error fetching steal details:', err);
+              // Use cached players list instead of fetching again
+              const stealer = playersRef.current.find(p => p.id === newGift.current_owner_id);
+              const victim = playersRef.current.find(p => p.id === prevState.ownerId);
+              
+              console.log('🎭 Dispatching giftStolen event from realtime:', { 
+                giftName: newGift.name, 
+                stealerName: stealer?.displayName,
+                victimName: victim?.displayName 
+              });
+              
+              window.dispatchEvent(new CustomEvent('giftStolen', {
+                detail: {
+                  giftName: newGift.name,
+                  stealerName: stealer?.displayName || 'Someone',
+                  victimName: victim?.displayName || 'Someone',
+                  stealsRemaining: 2 - (newGift.steal_count || 0),
+                  isLocked: (newGift.steal_count || 0) >= 2,
+                  giftId: newGift.id,
+                  giftImageUrl: newGift.image_url
                 }
-              };
-              fetchStealDetails();
+              }));
             }
-            
-            // Update previous state
-            previousGiftsRef.current.set(newGift.id, {
-              status: newGift.status,
-              ownerId: newGift.current_owner_id
-            });
           }
           
-          loadGifts(gameState.sessionId!).catch(err => 
-            console.error('Error loading gifts after change:', err)
-          );
+          // Debounced full reload as fallback to catch any missed updates
+          if (debouncedReloadRef.current) {
+            clearTimeout(debouncedReloadRef.current);
+          }
+          debouncedReloadRef.current = setTimeout(() => {
+            loadGifts(gameState.sessionId!).catch(err => 
+              console.error('Error in debounced gift reload:', err)
+            );
+          }, 2000);
         }
       )
       .on(
