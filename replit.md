@@ -69,11 +69,21 @@ Major improvements for handling 20+ concurrent players:
    - Images uploaded directly to storage instead of using data URLs
    - Lazy loading for gift images to improve performance
    - Fallback handling for broken image URLs
+   - **Client-side image compression** - Resizes to max 800x800 and targets ~200KB file size
+   - Progressive JPEG quality reduction for optimal file sizes
+   - Graceful fallback preserves original format if compression fails
 
 5. **Connection Handling**
    - Improved real-time subscription with status events
    - Automatic state refresh on reconnection
    - Health check every 30 seconds during active games
+   - **Increased real-time event throttle** from 20 to 100 events/second for 20+ player support
+
+6. **Player Experience**
+   - Waiting lobby screen for players before game starts
+   - Players see "Waiting for Game to Start" until host begins
+   - Draft session saving with 24-hour localStorage persistence
+   - Resume dialog when returning to setup with existing draft
 
 ### December 22, 2025: Initial Setup
 - Configured Vite to allow all hosts for Replit proxy
