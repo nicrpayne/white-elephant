@@ -630,11 +630,20 @@ export default function PresentationView() {
                           key={gift.id}
                           className="relative rounded-lg overflow-hidden bg-white shadow-lg flex flex-col items-center justify-center"
                         >
-                          <img
-                            src={gift.image_url}
-                            alt={gift.name}
-                            className="w-full h-full object-contain"
-                          />
+                          {gift.image_url ? (
+                            <img
+                              src={gift.image_url}
+                              alt={gift.name}
+                              className="w-full h-full object-contain"
+                              onError={(e) => {
+                                e.currentTarget.src = 'https://images.unsplash.com/photo-1513885535751-8b9238bd345a?w=400&q=80';
+                              }}
+                            />
+                          ) : (
+                            <div className="w-full h-full flex items-center justify-center bg-gray-100">
+                              <GiftIcon size={32} className="text-gray-400" />
+                            </div>
+                          )}
                           
                           {isLocked && (
                             <div className="absolute top-1 right-1 bg-yellow-500 text-white px-1.5 py-0.5 rounded-full text-xs font-bold">
@@ -792,11 +801,20 @@ export default function PresentationView() {
                   </div>
                 ) : (
                   /* Revealed Gift - Show Image */
-                  <img
-                    src={gift.image_url}
-                    alt={gift.name}
-                    className="w-full h-full object-contain"
-                  />
+                  gift.image_url ? (
+                    <img
+                      src={gift.image_url}
+                      alt={gift.name}
+                      className="w-full h-full object-contain"
+                      onError={(e) => {
+                        e.currentTarget.src = 'https://images.unsplash.com/photo-1513885535751-8b9238bd345a?w=400&q=80';
+                      }}
+                    />
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center bg-gray-100">
+                      <GiftIcon size={32} className="text-gray-400" />
+                    </div>
+                  )
                 )}
                 
                 {/* Status Indicator */}
@@ -841,11 +859,20 @@ export default function PresentationView() {
           <div className="bg-white rounded-lg p-8 max-w-2xl shadow-2xl">
             {gifts.find((g) => g.id === revealedGiftId) && (
               <>
-                <img
-                  src={gifts.find((g) => g.id === revealedGiftId)!.image_url}
-                  alt={gifts.find((g) => g.id === revealedGiftId)!.name}
-                  className="w-full h-96 object-contain mb-4"
-                />
+                {gifts.find((g) => g.id === revealedGiftId)!.image_url ? (
+                  <img
+                    src={gifts.find((g) => g.id === revealedGiftId)!.image_url}
+                    alt={gifts.find((g) => g.id === revealedGiftId)!.name}
+                    className="w-full h-96 object-contain mb-4"
+                    onError={(e) => {
+                      e.currentTarget.src = 'https://images.unsplash.com/photo-1513885535751-8b9238bd345a?w=400&q=80';
+                    }}
+                  />
+                ) : (
+                  <div className="w-full h-96 flex items-center justify-center bg-gray-100 mb-4">
+                    <GiftIcon size={64} className="text-gray-400" />
+                  </div>
+                )}
                 <h2 className="text-4xl font-bold text-center">
                   {gifts.find((g) => g.id === revealedGiftId)!.name}
                 </h2>
@@ -869,11 +896,20 @@ export default function PresentationView() {
               
               {/* Gift image */}
               <div className="bg-white rounded-lg p-4 shadow-2xl">
-                <img
-                  src={stealAnimation.giftImageUrl}
-                  alt={stealAnimation.giftName}
-                  className="w-full h-80 object-contain"
-                />
+                {stealAnimation.giftImageUrl ? (
+                  <img
+                    src={stealAnimation.giftImageUrl}
+                    alt={stealAnimation.giftName}
+                    className="w-full h-80 object-contain"
+                    onError={(e) => {
+                      e.currentTarget.src = 'https://images.unsplash.com/photo-1513885535751-8b9238bd345a?w=400&q=80';
+                    }}
+                  />
+                ) : (
+                  <div className="w-full h-80 flex items-center justify-center bg-gray-100">
+                    <GiftIcon size={64} className="text-gray-400" />
+                  </div>
+                )}
               </div>
               
               {/* Steal details */}
