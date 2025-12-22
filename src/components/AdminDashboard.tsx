@@ -109,7 +109,8 @@ const AdminDashboard = () => {
   const [activeTab, setActiveTab] = useState("setup");
   const [newGiftUrl, setNewGiftUrl] = useState("");
   const [isLoadingPreview, setIsLoadingPreview] = useState(false);
-  const [isRestoringSession, setIsRestoringSession] = useState(true);
+  const [isRestoringSession, setIsRestoringSession] = useState(false);
+  const [isCheckingSession, setIsCheckingSession] = useState(true);
   const [previewData, setPreviewData] = useState<{
     title: string;
     description: string;
@@ -216,11 +217,12 @@ const AdminDashboard = () => {
       if (stored && stored.isAdmin) {
         // There's an existing admin session - show restore dialog
         setShowRestoreDialog(true);
+        setIsCheckingSession(false);
         setHasCheckedSession(true);
       } else {
         // No existing session, start fresh
         clearSession();
-        setIsRestoringSession(false);
+        setIsCheckingSession(false);
         setHasCheckedSession(true);
       }
     };
@@ -910,13 +912,15 @@ const AdminDashboard = () => {
     }
   };
 
-  // Show loading while restoring session
-  if (isRestoringSession) {
+  // Show loading while checking or restoring session
+  if (isCheckingSession || isRestoringSession) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
         <div className="text-center">
           <Loader2 className="h-8 w-8 animate-spin text-primary mx-auto mb-4" />
-          <p className="text-muted-foreground">Loading your session...</p>
+          <p className="text-muted-foreground">
+            {isRestoringSession ? "Restoring your session..." : "Checking for saved session..."}
+          </p>
         </div>
       </div>
     );
