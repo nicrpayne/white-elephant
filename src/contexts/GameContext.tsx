@@ -323,9 +323,13 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
             }));
           }
           
-          loadSession(gameState.sessionId!).catch(err => 
-            console.error('Error loading session after change:', err)
-          );
+          // Add small random jitter to prevent thundering herd when game starts
+          const jitter = Math.random() * 300;
+          setTimeout(() => {
+            loadSession(gameState.sessionId!).catch(err => 
+              console.error('Error loading session after change:', err)
+            );
+          }, jitter);
         }
       )
       .subscribe((status, err) => {
@@ -334,10 +338,13 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
           console.log('✅ Successfully subscribed to real-time updates');
           setConnectionStatus('connected');
           reconnectAttemptRef.current = 0;
-          // Refresh data when connection is re-established
-          loadSession(gameState.sessionId!);
-          loadPlayers(gameState.sessionId!);
-          loadGifts(gameState.sessionId!);
+          // Refresh data when connection is re-established (with random jitter to prevent thundering herd)
+          const jitter = Math.random() * 500; // 0-500ms random delay
+          setTimeout(() => {
+            loadSession(gameState.sessionId!);
+            loadPlayers(gameState.sessionId!);
+            loadGifts(gameState.sessionId!);
+          }, jitter);
           // Notify UI of successful reconnection
           window.dispatchEvent(new CustomEvent('realtimeConnected'));
         } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
@@ -1127,13 +1134,13 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
         
         console.log('New gift order:', shuffledGifts.map((g, idx) => ({ name: g.name, newPosition: idx + 1 })));
         
-        // Update gift positions in database
-        for (let i = 0; i < shuffledGifts.length; i++) {
-          await supabase
+        // Batch update gift positions in parallel (much faster than sequential)
+        await Promise.all(shuffledGifts.map((gift, i) => 
+          supabase
             .from('gifts')
             .update({ position: i + 1 })
-            .eq('id', shuffledGifts[i].id);
-        }
+            .eq('id', gift.id)
+        ));
       }
 
       // Randomize players if configured
@@ -1149,12 +1156,13 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
         
         console.log('Shuffled order:', shuffled.map((p, idx) => ({ name: p.display_name, newOrder: idx + 1 })));
         
-        for (let i = 0; i < shuffled.length; i++) {
-          await supabase
+        // Batch update player orders in parallel (much faster than sequential)
+        await Promise.all(shuffled.map((player, i) => 
+          supabase
             .from('players')
             .update({ order_index: i + 1 })
-            .eq('id', shuffled[i].id);
-        }
+            .eq('id', player.id)
+        ));
         
         // Reload players after randomization to get updated order
         const { data: updatedPlayers } = await supabase
